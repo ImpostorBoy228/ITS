@@ -5,6 +5,7 @@
 #include <time.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <gmp.h>
 
 #ifndef M_PI
@@ -18,12 +19,6 @@
 #define OFFSET_FILE "offset.dat"
 #define FINALS_FILE "finals.all"
 #define EPOCH_UNIX 1782086400.0   // 2026-06-22 00:00:00 UTC
-				  
-typedef struct {
-    uint64_t lo;
-    uint64_t hi; 
-} uint128_t;
-
 
 // astronomical helpers
 double jdn(int y, int m, int d) {
@@ -117,10 +112,11 @@ double get_offset(void) {
     return offset;
 }
 
-/* ---------- UT1 from finals.all ---------- */
+/* ---------- UT1 from finals.all with cubic spline interpolation ---------- */
 static double *mjd_arr = NULL;
 static double *dut1_arr = NULL;
 static int n_eop = 0;
+static double *second_deriv = NULL;   // for cubic spline
 
 double mjd_from_unix(time_t t) {
     return (double)t / SECS_PER_DAY + 40587.0;   // 1970-01-01 = MJD 40587
@@ -133,7 +129,7 @@ void load_finals(const char *filename) {
     // first pass: count valid lines
     while (fgets(line, sizeof(line), f)) {
         if (strlen(line) < 68) continue;
-        if (strncmp(line, "MJD", 3) == 0) continue;   // skip header
+        if (strncmp(line, "MJD", 3) == 0) continue;
         n_eop++;
     }
     rewind(f);
@@ -149,7 +145,6 @@ void load_finals(const char *filename) {
         strncpy(dut1_str, line + 57, 10); dut1_str[10] = '\0';
         double mjd = atof(mjd_str);
         double dut1 = atof(dut1_str);
-        // ignore lines with invalid data (e.g., all blanks)
         if (mjd > 0 && dut1 > -10 && dut1 < 10) {
             mjd_arr[i] = mjd;
             dut1_arr[i] = dut1;
@@ -160,21 +155,65 @@ void load_finals(const char *filename) {
     fclose(f);
 }
 
-double interpolate_dut1(double mjd) {
+/* Build natural cubic spline coefficients (second derivatives) */
+void build_spline(void) {
+    if (n_eop < 2) {
+        second_deriv = NULL;
+        return;
+    }
+    second_deriv = malloc(n_eop * sizeof(double));
+    int n = n_eop;
+    double *h = malloc((n-1) * sizeof(double));
+    double *b = malloc((n-1) * sizeof(double));
+    for (int i=0; i<n-1; i++) {
+        h[i] = mjd_arr[i+1] - mjd_arr[i];
+        b[i] = (dut1_arr[i+1] - dut1_arr[i]) / h[i];
+    }
+    // Tridiagonal system: d[i]*s''[i] + l[i]*s''[i-1] + mu[i]*s''[i+1] = z[i]
+    double *d = malloc(n * sizeof(double));
+    double *l = malloc(n * sizeof(double));
+    double *mu = malloc(n * sizeof(double));
+    double *z = malloc(n * sizeof(double));
+    d[0] = 1.0; l[0] = 0.0; mu[0] = 0.0; z[0] = 0.0;
+    for (int i=1; i<n-1; i++) {
+        double h_im1 = h[i-1];
+        double h_i = h[i];
+        l[i] = h_im1 / (h_im1 + h_i);
+        mu[i] = h_i / (h_im1 + h_i);
+        d[i] = 2.0;
+        z[i] = 3.0 * ((b[i] - b[i-1]) / (h_im1 + h_i));
+    }
+    d[n-1] = 1.0; l[n-1] = 0.0; mu[n-1] = 0.0; z[n-1] = 0.0;
+    // Forward sweep
+    for (int i=1; i<n; i++) {
+        double factor = l[i] / d[i-1];
+        d[i] -= factor * mu[i-1];
+        z[i] -= factor * z[i-1];
+    }
+    // Back substitution
+    second_deriv[n-1] = z[n-1] / d[n-1];
+    for (int i=n-2; i>=0; i--) {
+        second_deriv[i] = (z[i] - mu[i] * second_deriv[i+1]) / d[i];
+    }
+    free(h); free(b); free(d); free(l); free(mu); free(z);
+}
+
+/* Interpolate dUT1 at given MJD using cubic spline */
+double interpolate_dut1_spline(double mjd) {
     if (n_eop == 0) return 0.0;
     if (mjd <= mjd_arr[0]) return dut1_arr[0];
     if (mjd >= mjd_arr[n_eop-1]) return dut1_arr[n_eop-1];
-    int lo = 0, hi = n_eop - 1;
-    while (hi - lo > 1) {
-        int mid = (lo + hi) / 2;
-        if (mjd_arr[mid] < mjd) lo = mid;
-        else hi = mid;
-    }
-    double t = (mjd - mjd_arr[lo]) / (mjd_arr[hi] - mjd_arr[lo]);
-    return dut1_arr[lo] + t * (dut1_arr[hi] - dut1_arr[lo]);
+    int i = 0;
+    while (i < n_eop-1 && mjd_arr[i+1] < mjd) i++;
+    double h = mjd_arr[i+1] - mjd_arr[i];
+    double t = (mjd - mjd_arr[i]) / h;
+    double y0 = dut1_arr[i], y1 = dut1_arr[i+1];
+    double s0 = second_deriv[i], s1 = second_deriv[i+1];
+    // Cubic Hermite spline formula
+    return (1-t)*y0 + t*y1 + (t*t*t - t)*((1-t)*s0 + t*s1)*h*h/6.0;
 }
 
-// formatting 
+// formatting helper (unchanged)
 void format_time(double sec, char *buf, size_t size) {
     int h = (int)(sec / 3600);
     int m = (int)(fmod(sec, 3600) / 60);
@@ -182,30 +221,58 @@ void format_time(double sec, char *buf, size_t size) {
     snprintf(buf, size, "%02d:%02d:%02d", h, m, s);
 }
 
-// MAIN
+// MAIN – now with integer nanosecond arithmetic
 int main(void) {
     load_finals(FINALS_FILE);
+    build_spline();   // prepare cubic spline for dUT1
 
     double offset = get_offset();
     char off_str[16];
     format_time(offset, off_str, sizeof(off_str));
     printf("Day start offset: %.3f UT1 sec (%s)\n", offset, off_str);
 
-    // epoch in UT1: 2026-06-22 00:00:00 UTC + dut1(epoch) + offset
-    double epoch_utc = EPOCH_UNIX;
-    double epoch_dut1 = interpolate_dut1(mjd_from_unix((time_t)epoch_utc));
-    double epoch_ut1 = epoch_utc + epoch_dut1;
-    double epoch_start_ut1 = epoch_ut1 + offset;   // start of day 0
+    // Epoch in UTC as struct timespec
+    struct timespec epoch_ts;
+    epoch_ts.tv_sec = (time_t)EPOCH_UNIX;
+    epoch_ts.tv_nsec = 0;
 
-    // current UT1
-    time_t now_utc = time(NULL);
-    double now_dut1 = interpolate_dut1(mjd_from_unix(now_utc));
-    double now_ut1 = (double)now_utc + now_dut1;
+    // Current UTC time with nanosecond resolution
+    struct timespec now_ts;
+    if (clock_gettime(CLOCK_REALTIME, &now_ts) == -1) {
+        perror("clock_gettime");
+        exit(1);
+    }
 
-    // ITS time
-    double diff = now_ut1 - epoch_start_ut1;
-    long day = (long)floor(diff / SECS_PER_DAY);
-    double sec = diff - day * SECS_PER_DAY;
+    // dUT1 for epoch and now (spline gives double)
+    double epoch_dut1 = interpolate_dut1_spline(mjd_from_unix(epoch_ts.tv_sec));
+    double now_dut1 = interpolate_dut1_spline(mjd_from_unix(now_ts.tv_sec));
+
+    // Convert everything to integer nanoseconds (round to nearest ns)
+    int64_t offset_ns = (int64_t)(offset * 1e9 + 0.5);
+    int64_t epoch_dut1_ns = (int64_t)(epoch_dut1 * 1e9 + 0.5);
+    int64_t now_dut1_ns = (int64_t)(now_dut1 * 1e9 + 0.5);
+
+    // epoch_ts in nanoseconds from Unix epoch
+    int64_t epoch_ns = (int64_t)epoch_ts.tv_sec * 1000000000LL + epoch_ts.tv_nsec;
+    int64_t now_ns = (int64_t)now_ts.tv_sec * 1000000000LL + now_ts.tv_nsec;
+
+    // UT1 times as integer nanoseconds
+    int64_t epoch_start_ns = epoch_ns + epoch_dut1_ns + offset_ns;  // start of day 0
+    int64_t delta_ns = now_ns + now_dut1_ns - epoch_start_ns;       // nanoseconds from epoch start
+
+    // Use GMP for division to get days and remaining nanoseconds
+    mpz_t delta_mpz, divisor, day_mpz, sec_ns_mpz;
+    mpz_init_set_si(delta_mpz, delta_ns);
+    mpz_init_set_ui(divisor, 86400000000000ULL);  // 86400 * 1e9
+    mpz_init(day_mpz);
+    mpz_init(sec_ns_mpz);
+    mpz_fdiv_q(day_mpz, delta_mpz, divisor);
+    mpz_fdiv_r(sec_ns_mpz, delta_mpz, divisor);
+    long day = mpz_get_si(day_mpz);
+    double sec = mpz_get_d(sec_ns_mpz) / 1e9;   // seconds within the day
+
+    // Print total nanoseconds as a signed integer
+    printf("Nanoseconds since epoch start: %lld\n", (long long)delta_ns);
 
     long years = day / 147;
     long rem = day % 147;
@@ -214,19 +281,25 @@ int main(void) {
     long weeks = rem / 7;
     long days_rem = rem % 7;
 
-    if (sec < 0) { sec += SECS_PER_DAY; day--; }
-
     char sec_str[16];
     format_time(sec, sec_str, sizeof(sec_str));
     printf("ITS time: %ldy %ldm %ldw %ldd %s\n", years, months, weeks, days_rem, sec_str);
 
-    // optional: show UTC and UT1 for reference
+    // Show UTC and UT1 for reference (UT1 as integer seconds, ignoring ns)
     char utc_buf[32], ut1_buf[32];
-    strftime(utc_buf, sizeof(utc_buf), "%Y-%m-%d %H:%M:%S", gmtime(&now_utc));
-    time_t ut1_ts = (time_t)now_ut1;
-    strftime(ut1_buf, sizeof(ut1_buf), "%Y-%m-%d %H:%M:%S", gmtime(&ut1_ts));
+    strftime(utc_buf, sizeof(utc_buf), "%Y-%m-%d %H:%M:%S", gmtime(&now_ts.tv_sec));
+    time_t ut1_sec = (time_t)((now_ns + now_dut1_ns) / 1000000000LL);
+    strftime(ut1_buf, sizeof(ut1_buf), "%Y-%m-%d %H:%M:%S", gmtime(&ut1_sec));
     printf("UTC: %s\nUT1: %s\n", utc_buf, ut1_buf);
-    
-    mpz_clear(nanoseconds);
+
+    // Cleanup
+    mpz_clear(delta_mpz);
+    mpz_clear(divisor);
+    mpz_clear(day_mpz);
+    mpz_clear(sec_ns_mpz);
+    free(mjd_arr);
+    free(dut1_arr);
+    free(second_deriv);
+
     return 0;
 }
