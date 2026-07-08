@@ -112,7 +112,7 @@ double get_offset(void) {
     return offset;
 }
 
-// UT1 from finals.all with cubic spline interpolation 
+// UT1 from finals.all with cubic spline interpolation
 static double *mjd_arr = NULL;
 static double *dut1_arr = NULL;
 static int n_eop = 0;
@@ -220,15 +220,35 @@ void format_time(double sec, char *buf, size_t size) {
     int s = (int)(fmod(sec, 60));
     snprintf(buf, size, "%02d:%02d:%02d", h, m, s);
 }
+
+/* Convert a double representing seconds to integer nanoseconds (mpz_t) */
+static void double_to_ns(double val, mpz_t out) {
+    /* Multiply by 1e9 and round to nearest integer */
+    mpq_t q;
+    mpq_init(q);
+    mpq_set_d(q, val);
+    mpq_mul_ui(q, q, 1000000000ULL);
+    mpq_round(q, q);        /* round to nearest integer */
+    mpz_set_q(out, q);
+    mpq_clear(q);
+}
+
+/* Convert struct timespec to mpz_t nanoseconds since epoch */
+static void timespec_to_ns(const struct timespec *ts, mpz_t out) {
+    mpz_set_si(out, ts->tv_sec);
+    mpz_mul_ui(out, out, 1000000000ULL);
+    mpz_add_ui(out, out, ts->tv_nsec);
+}
+
 // ----
 int main(void) {
     load_finals(FINALS_FILE);
-    build_spline(); 
+    build_spline();
 
     double offset = get_offset();
     char off_str[16];
     format_time(offset, off_str, sizeof(off_str));
-    printf("Day start offset: %.3f UT1 sec (%s)\n", offset, off_str);
+    printf("Day start offset: %.6f UT1 sec (%s)\n", offset, off_str);
 
     // Epoch in UTC as struct timespec
     struct timespec epoch_ts;
@@ -246,32 +266,50 @@ int main(void) {
     double epoch_dut1 = interpolate_dut1_spline(mjd_from_unix(epoch_ts.tv_sec));
     double now_dut1 = interpolate_dut1_spline(mjd_from_unix(now_ts.tv_sec));
 
-    // Convert everything to integer nanoseconds (round to nearest ns)
-    int64_t offset_ns = (int64_t)(offset * 1e9 + 0.5);
-    int64_t epoch_dut1_ns = (int64_t)(epoch_dut1 * 1e9 + 0.5);
-    int64_t now_dut1_ns = (int64_t)(now_dut1 * 1e9 + 0.5);
+    // oh fuck we are going to have big shit
+    mpz_t epoch_ns, now_ns;
+    mpz_t epoch_dut1_ns, now_dut1_ns;
+    mpz_t offset_ns;
+    mpz_t epoch_start_ns;   /* start of day 0 in UT1 */
+    mpz_t delta_ns;         /* nanoseconds from epoch start */
+    mpz_t divisor;
+    mpz_t day_mpz, sec_ns_mpz;
 
-    // epoch_ts in nanoseconds from Unix epoch
-    int64_t epoch_ns = (int64_t)epoch_ts.tv_sec * 1000000000LL + epoch_ts.tv_nsec;
-    int64_t now_ns = (int64_t)now_ts.tv_sec * 1000000000LL + now_ts.tv_nsec;
-
-    // UT1 times as integer nanoseconds
-    int64_t epoch_start_ns = epoch_ns + epoch_dut1_ns + offset_ns;  // start of day 0
-    int64_t delta_ns = now_ns + now_dut1_ns - epoch_start_ns;       // nanoseconds from epoch start
-
-    // Use GMP for division to get days and remaining nanoseconds
-    mpz_t delta_mpz, divisor, day_mpz, sec_ns_mpz;
-    mpz_init_set_si(delta_mpz, delta_ns);
+    mpz_init(epoch_ns);
+    mpz_init(now_ns);
+    mpz_init(epoch_dut1_ns);
+    mpz_init(now_dut1_ns);
+    mpz_init(offset_ns);
+    mpz_init(epoch_start_ns);
+    mpz_init(delta_ns);
     mpz_init_set_ui(divisor, 86400000000000ULL);  // 86400 * 1e9
     mpz_init(day_mpz);
     mpz_init(sec_ns_mpz);
-    mpz_fdiv_q(day_mpz, delta_mpz, divisor);
-    mpz_fdiv_r(sec_ns_mpz, delta_mpz, divisor);
-    long day = mpz_get_si(day_mpz);
-    double sec = mpz_get_d(sec_ns_mpz) / 1e9;   // seconds within the day
+
+    timespec_to_ns(&epoch_ts, epoch_ns);
+    timespec_to_ns(&now_ts, now_ns);
+
+    double_to_ns(epoch_dut1, epoch_dut1_ns);
+    double_to_ns(now_dut1, now_dut1_ns);
+    double_to_ns(offset, offset_ns);
+
+    /* epoch_start_ns = epoch_ns + epoch_dut1_ns + offset_ns */
+    mpz_add(epoch_start_ns, epoch_ns, epoch_dut1_ns);
+    mpz_add(epoch_start_ns, epoch_start_ns, offset_ns);
+
+    /* delta_ns = now_ns + now_dut1_ns - epoch_start_ns */
+    mpz_add(delta_ns, now_ns, now_dut1_ns);
+    mpz_sub(delta_ns, delta_ns, epoch_start_ns);
 
     // Print total nanoseconds as a signed integer
-    printf("Nanoseconds since epoch start: %lld\n", (long long)delta_ns);
+    gmp_printf("Nanoseconds since epoch start: %Zd\n", delta_ns);
+
+    /* Use GMP division to get days and remaining nanoseconds */
+    mpz_fdiv_q(day_mpz, delta_ns, divisor);
+    mpz_fdiv_r(sec_ns_mpz, delta_ns, divisor);
+
+    long day = mpz_get_si(day_mpz);
+    double sec = mpz_get_d(sec_ns_mpz) / 1e9;   // seconds within the day
 
     long years = day / 147;
     long rem = day % 147;
@@ -286,15 +324,27 @@ int main(void) {
     // Show UTC and UT1
     char utc_buf[32], ut1_buf[32];
     strftime(utc_buf, sizeof(utc_buf), "%Y-%m-%d %H:%M:%S", gmtime(&now_ts.tv_sec));
-    time_t ut1_sec = (time_t)((now_ns + now_dut1_ns) / 1000000000LL);
+    /* UT1 second = (now_ns + now_dut1_ns) / 1e9 */
+    mpz_t ut1_ns;
+    mpz_init(ut1_ns);
+    mpz_add(ut1_ns, now_ns, now_dut1_ns);
+    time_t ut1_sec = mpz_get_si(ut1_ns) / 1000000000LL;
     strftime(ut1_buf, sizeof(ut1_buf), "%Y-%m-%d %H:%M:%S", gmtime(&ut1_sec));
     printf("UTC: %s\nUT1: %s\n", utc_buf, ut1_buf); // actually same thing
+    mpz_clear(ut1_ns);
 
-    // clear shitty
-    mpz_clear(delta_mpz);
+    // clear all GMP variables
+    mpz_clear(epoch_ns);
+    mpz_clear(now_ns);
+    mpz_clear(epoch_dut1_ns);
+    mpz_clear(now_dut1_ns);
+    mpz_clear(offset_ns);
+    mpz_clear(epoch_start_ns);
+    mpz_clear(delta_ns);
     mpz_clear(divisor);
     mpz_clear(day_mpz);
     mpz_clear(sec_ns_mpz);
+
     free(mjd_arr);
     free(dut1_arr);
     free(second_deriv);
