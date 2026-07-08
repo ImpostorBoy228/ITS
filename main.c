@@ -278,12 +278,11 @@ int main(void) {
     long rem = day % 147;
     long months = rem / 21;
     rem %= 21;
-    long weeks = rem / 7;
-    long days_rem = rem % 7;
+    long days_rem = rem;
 
     char sec_str[16];
     format_time(sec, sec_str, sizeof(sec_str));
-    printf("ITS time: %ldy %ldm %ldw %ldd %s\n", years, months, weeks, days_rem, sec_str);
+    printf("ITS time: %ldy %ldm %ldd %s\n", years, months, days_rem, sec_str);
 
     // Show UTC and UT1 for reference (UT1 as integer seconds, ignoring ns)
     char utc_buf[32], ut1_buf[32];
