@@ -5,6 +5,7 @@
 #include <time.h>
 #include <string.h>
 #include <unistd.h>
+#include <gmp.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -15,11 +16,16 @@
 #define ZENITH 108.0
 #define SECS_PER_DAY 86400.0
 #define OFFSET_FILE "offset.dat"
+#define FINALS_FILE "finals.all"
+#define EPOCH_UNIX 1782086400.0   // 2026-06-22 00:00:00 UTC
+				  
+typedef struct {
+    uint64_t lo;
+    uint64_t hi; 
+} uint128_t;
 
-// todo: migrate from utc to ut1 
 
-/* -------------------- Astronomical calculations -------------------- */
-
+// astronomical helpers
 double jdn(int y, int m, int d) {
     if (m <= 2) { y--; m += 12; }
     int A = y / 100;
@@ -64,7 +70,8 @@ void compute_times(int y, int m, int d, double *sunset, double *twilight_end, do
     double ha_twilight = hour_angle(LAT, decl, ZENITH, 1);
     *has_night = (ha_twilight != 0.0);
     if (!*has_night) {
-        *sunset = -1.0; *twilight_end = -1.0; *daylen = 0.0; return;
+        *sunset = -1.0; *twilight_end = -1.0; *daylen = 0.0;
+        return;
     }
     double set = noon + ha_sunset;
     double twi = noon + ha_twilight;
@@ -77,10 +84,9 @@ void compute_times(int y, int m, int d, double *sunset, double *twilight_end, do
     *daylen = 2.0 * ha_sunset;
 }
 
-/* Compute the offset (UT seconds of day when our day starts) by finding earliest twilight end */
+// offset computation (UT1‑based)
 double compute_offset(void) {
     double min_twilight = 1e9;
-    int best_y = 0, best_m = 0, best_d = 0;
     for (int y = 1976; y <= 2026; y++) {
         for (int m = 1; m <= 12; m++) {
             int dim;
@@ -92,46 +98,83 @@ double compute_offset(void) {
                 int has_night;
                 compute_times(y, m, d, &sunset, &twilight, &daylen, &has_night);
                 if (!has_night) continue;
-                if (twilight < min_twilight) {
-                    min_twilight = twilight;
-                    best_y = y; best_m = m; best_d = d;
-                }
+                if (twilight < min_twilight) min_twilight = twilight;
             }
         }
     }
-    if (best_y == 0) return -1.0;
-    double offset = min_twilight;
-    if (offset < 0.0) offset += SECS_PER_DAY;
-    return offset;
+    return (min_twilight < 1e9) ? min_twilight : -1.0;
 }
 
-/* Load offset from file, or compute and save if file doesn't exist */
 double get_offset(void) {
     FILE *f = fopen(OFFSET_FILE, "r");
     double offset;
-    if (f) {
-        if (fscanf(f, "%lf", &offset) == 1) {
-            fclose(f);
-            return offset;
-        }
-        fclose(f);
-    }
+    if (f && fscanf(f, "%lf", &offset) == 1) { fclose(f); return offset; }
+    if (f) fclose(f);
     offset = compute_offset();
-    if (offset < 0.0) {
-        fprintf(stderr, "Failed to compute offset.\n");
-        exit(1);
-    }
+    if (offset < 0.0) { fprintf(stderr, "Offset computation failed\n"); exit(1); }
     f = fopen(OFFSET_FILE, "w");
-    if (f) {
-        fprintf(f, "%.6f\n", offset);
-        fclose(f);
-    } else {
-        fprintf(stderr, "Warning: could not save offset to file.\n");
-    }
+    if (f) { fprintf(f, "%.6f\n", offset); fclose(f); }
     return offset;
 }
 
-/* Format seconds (0..86400) into HH:MM:SS string */
+/* ---------- UT1 from finals.all ---------- */
+static double *mjd_arr = NULL;
+static double *dut1_arr = NULL;
+static int n_eop = 0;
+
+double mjd_from_unix(time_t t) {
+    return (double)t / SECS_PER_DAY + 40587.0;   // 1970-01-01 = MJD 40587
+}
+
+void load_finals(const char *filename) {
+    FILE *f = fopen(filename, "r");
+    if (!f) { perror("finals.all"); exit(1); }
+    char line[256];
+    // first pass: count valid lines
+    while (fgets(line, sizeof(line), f)) {
+        if (strlen(line) < 68) continue;
+        if (strncmp(line, "MJD", 3) == 0) continue;   // skip header
+        n_eop++;
+    }
+    rewind(f);
+    mjd_arr = malloc(n_eop * sizeof(double));
+    dut1_arr = malloc(n_eop * sizeof(double));
+    if (!mjd_arr || !dut1_arr) { fprintf(stderr, "malloc failed\n"); exit(1); }
+    int i = 0;
+    while (fgets(line, sizeof(line), f)) {
+        if (strlen(line) < 68) continue;
+        if (strncmp(line, "MJD", 3) == 0) continue;
+        char mjd_str[10], dut1_str[12];
+        strncpy(mjd_str, line + 7, 8); mjd_str[8] = '\0';
+        strncpy(dut1_str, line + 57, 10); dut1_str[10] = '\0';
+        double mjd = atof(mjd_str);
+        double dut1 = atof(dut1_str);
+        // ignore lines with invalid data (e.g., all blanks)
+        if (mjd > 0 && dut1 > -10 && dut1 < 10) {
+            mjd_arr[i] = mjd;
+            dut1_arr[i] = dut1;
+            i++;
+        }
+    }
+    n_eop = i;
+    fclose(f);
+}
+
+double interpolate_dut1(double mjd) {
+    if (n_eop == 0) return 0.0;
+    if (mjd <= mjd_arr[0]) return dut1_arr[0];
+    if (mjd >= mjd_arr[n_eop-1]) return dut1_arr[n_eop-1];
+    int lo = 0, hi = n_eop - 1;
+    while (hi - lo > 1) {
+        int mid = (lo + hi) / 2;
+        if (mjd_arr[mid] < mjd) lo = mid;
+        else hi = mid;
+    }
+    double t = (mjd - mjd_arr[lo]) / (mjd_arr[hi] - mjd_arr[lo]);
+    return dut1_arr[lo] + t * (dut1_arr[hi] - dut1_arr[lo]);
+}
+
+// formatting 
 void format_time(double sec, char *buf, size_t size) {
     int h = (int)(sec / 3600);
     int m = (int)(fmod(sec, 3600) / 60);
@@ -139,71 +182,51 @@ void format_time(double sec, char *buf, size_t size) {
     snprintf(buf, size, "%02d:%02d:%02d", h, m, s);
 }
 
-/* -------------------- Our time system -------------------- */
-
-/* Convert UTC time_t to our time: day number since epoch and seconds of day */
-void utc_to_our_time(time_t utc, double offset, long *our_day, double *our_sec) {
-    double utc_sec = (double)(utc % (time_t)SECS_PER_DAY);
-    double diff = utc_sec - offset;
-    if (diff < 0.0) diff += SECS_PER_DAY;
-    *our_sec = diff;
-    double days_since_epoch = (double)utc / SECS_PER_DAY;
-    double our_days = days_since_epoch - offset / SECS_PER_DAY;
-    *our_day = (long)floor(our_days);
-    if (*our_sec >= SECS_PER_DAY - 0.5) {
-        *our_sec = 0.0;
-        (*our_day)++;
-    }
-}
-
-/* Get current UTC time as time_t */
-time_t current_utc(void) {
-    return time(NULL);
-}
-
-/* Convert our day and seconds to a printable string (UTC equivalent) */
-void our_time_to_utc_string(long our_day, double our_sec, double offset, char *buf, size_t size) {
-    double utc_sec = our_sec + offset;
-    if (utc_sec >= SECS_PER_DAY) utc_sec -= SECS_PER_DAY;
-    time_t utc = (time_t)((our_day + offset / SECS_PER_DAY) * SECS_PER_DAY + utc_sec);
-    struct tm *tm = gmtime(&utc);
-    strftime(buf, size, "%Y-%m-%d %H:%M:%S UTC", tm);
-}
-
-
+// MAIN
 int main(void) {
+    load_finals(FINALS_FILE);
+
     double offset = get_offset();
-    char offset_str[16];
-    format_time(offset, offset_str, sizeof(offset_str));
-    printf("Our day starts at UT seconds: %.3f (i.e. %s UTC)\n", offset, offset_str);
+    char off_str[16];
+    format_time(offset, off_str, sizeof(off_str));
+    printf("Day start offset: %.3f UT1 sec (%s)\n", offset, off_str);
 
-    time_t now = current_utc();
-    struct tm *now_tm = gmtime(&now);
-    char now_str[64];
-    strftime(now_str, sizeof(now_str), "%Y-%m-%d %H:%M:%S UTC", now_tm);
-    printf("Current UTC: %s\n", now_str);
+    // epoch in UT1: 2026-06-22 00:00:00 UTC + dut1(epoch) + offset
+    double epoch_utc = EPOCH_UNIX;
+    double epoch_dut1 = interpolate_dut1(mjd_from_unix((time_t)epoch_utc));
+    double epoch_ut1 = epoch_utc + epoch_dut1;
+    double epoch_start_ut1 = epoch_ut1 + offset;   // start of day 0
 
-    long our_day;
-    double our_sec;
-    utc_to_our_time(now, offset, &our_day, &our_sec);
-    char time_str[16];
-    format_time(our_sec, time_str, sizeof(time_str));
-    // todo: format our_day to years and months, where 1 year = 147 days; 1 month = 21 days
-    // that is fucking genius
-    printf("ITS time: Day %ld, %s since day start\n", our_day, time_str);
-    time_t local_ts = now + 7 * 3600;  // UTC+7
-    struct tm *local_tm = gmtime(&local_ts);
-    char local_str[64];
-    strftime(local_str, sizeof(local_str), "%Y-%m-%d %H:%M:%S", local_tm);
-    printf("Local time (Novosibirsk): %s\n", local_str);
+    // current UT1
+    time_t now_utc = time(NULL);
+    double now_dut1 = interpolate_dut1(mjd_from_unix(now_utc));
+    double now_ut1 = (double)now_utc + now_dut1;
 
-    /* Show when our current day started (UTC) */
-    double day_start_utc_sec = offset + (our_day * SECS_PER_DAY);
-    time_t day_start = (time_t)day_start_utc_sec;
-    struct tm *start_tm = gmtime(&day_start);
-    char start_str[64];
-    strftime(start_str, sizeof(start_str), "%Y-%m-%d %H:%M:%S UTC", start_tm);
-    printf("Current our day started at: %s\n", start_str);
+    // ITS time
+    double diff = now_ut1 - epoch_start_ut1;
+    long day = (long)floor(diff / SECS_PER_DAY);
+    double sec = diff - day * SECS_PER_DAY;
 
+    long years = day / 147;
+    long rem = day % 147;
+    long months = rem / 21;
+    rem %= 21;
+    long weeks = rem / 7;
+    long days_rem = rem % 7;
+
+    if (sec < 0) { sec += SECS_PER_DAY; day--; }
+
+    char sec_str[16];
+    format_time(sec, sec_str, sizeof(sec_str));
+    printf("ITS time: %ldy %ldm %ldw %ldd %s\n", years, months, weeks, days_rem, sec_str);
+
+    // optional: show UTC and UT1 for reference
+    char utc_buf[32], ut1_buf[32];
+    strftime(utc_buf, sizeof(utc_buf), "%Y-%m-%d %H:%M:%S", gmtime(&now_utc));
+    time_t ut1_ts = (time_t)now_ut1;
+    strftime(ut1_buf, sizeof(ut1_buf), "%Y-%m-%d %H:%M:%S", gmtime(&ut1_ts));
+    printf("UTC: %s\nUT1: %s\n", utc_buf, ut1_buf);
+    
+    mpz_clear(nanoseconds);
     return 0;
 }
