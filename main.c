@@ -221,16 +221,9 @@ void format_time(double sec, char *buf, size_t size) {
     snprintf(buf, size, "%02d:%02d:%02d", h, m, s);
 }
 
-/* Convert a double representing seconds to integer nanoseconds (mpz_t) */
 static void double_to_ns(double val, mpz_t out) {
-    /* Multiply by 1e9 and round to nearest integer */
-    mpq_t q;
-    mpq_init(q);
-    mpq_set_d(q, val);
-    mpq_mul_ui(q, q, 1000000000ULL);
-    mpq_round(q, q);        /* round to nearest integer */
-    mpz_set_q(out, q);
-    mpq_clear(q);
+    double ns = val * 1e9;
+    mpz_set_d(out, ns);
 }
 
 /* Convert struct timespec to mpz_t nanoseconds since epoch */
