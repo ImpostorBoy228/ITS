@@ -1,8 +1,0 @@
-[package]
-name = "its"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-arika = "0.2.0"
-hifitime = "4.3.0"
