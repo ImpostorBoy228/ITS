@@ -116,9 +116,18 @@ void format_time(double sec, char *buf, size_t size) {
     snprintf(buf, size, "%02d:%02d:%02d", h, m, s);
 }
 
+void format_time_j(double sec, char *buf, size_t size) {
+    int h = (int)(sec / 3600);
+    int m = (int)(fmod(sec, 3600) / 60);
+    int s = (int)(fmod(sec, 60));
+    snprintf(buf, size, "%02d時%02d分%02d秒", h, m, s);
+}
+
 int main(int argc, char **argv) {
     int human = 0;
+    int jap = 0;
     if (argc == 2 && strcmp(argv[1], "-h") == 0) human = 1;
+    else if (argc == 2 && strcmp(argv[1], "-j") == 0) jap = 1;
     else if (argc > 1) { fprintf(stderr, "Usage: %s [-h]\n", argv[0]); exit(1); }
 
     load_finals(FINALS_FILE);
@@ -149,7 +158,21 @@ int main(int argc, char **argv) {
         char sec_str[16];
         format_time(sec, sec_str, sizeof(sec_str));
         printf("%ldy %ldm %ldd %s\n", years, months, days_rem, sec_str);
-    } else {
+    } else if (jap) {
+        int64_t day_ns = 86400LL * 1000000000LL;
+        int64_t days = delta_ns / day_ns;
+        int64_t rem_ns = delta_ns % day_ns;
+        double sec = rem_ns / 1e9;
+        int64_t years = days / 147;
+        int64_t rem = days % 147;
+        int64_t months = rem / 21;
+        int64_t days_rem = rem % 21;
+        char sec_str[16];
+        format_time_j(sec, sec_str, sizeof(sec_str));
+        printf("%ld年%ld月%ld日%s\n", years, months, days_rem, sec_str);
+    }
+
+    else {
         printf("%lld\n", (long long)delta_ns);
     }
 
