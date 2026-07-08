@@ -13,7 +13,7 @@
 #endif
 
 #define LAT 55.03
-#define LON 82.93
+#define LON 82.93 // Novosibirsk
 #define ZENITH 108.0
 #define SECS_PER_DAY 86400.0
 #define OFFSET_FILE "offset.dat"
@@ -106,13 +106,13 @@ double get_offset(void) {
     if (f && fscanf(f, "%lf", &offset) == 1) { fclose(f); return offset; }
     if (f) fclose(f);
     offset = compute_offset();
-    if (offset < 0.0) { fprintf(stderr, "Offset computation failed\n"); exit(1); }
+    if (offset < 0.0) { fprintf(stderr, "Offset computation fuckup\n"); exit(1); }
     f = fopen(OFFSET_FILE, "w");
     if (f) { fprintf(f, "%.6f\n", offset); fclose(f); }
     return offset;
 }
 
-/* ---------- UT1 from finals.all with cubic spline interpolation ---------- */
+// UT1 from finals.all with cubic spline interpolation 
 static double *mjd_arr = NULL;
 static double *dut1_arr = NULL;
 static int n_eop = 0;
@@ -209,22 +209,21 @@ double interpolate_dut1_spline(double mjd) {
     double t = (mjd - mjd_arr[i]) / h;
     double y0 = dut1_arr[i], y1 = dut1_arr[i+1];
     double s0 = second_deriv[i], s1 = second_deriv[i+1];
-    // Cubic Hermite spline formula
+    // Cubic spline formula
     return (1-t)*y0 + t*y1 + (t*t*t - t)*((1-t)*s0 + t*s1)*h*h/6.0;
 }
 
-// formatting helper (unchanged)
+// formatting helper
 void format_time(double sec, char *buf, size_t size) {
     int h = (int)(sec / 3600);
     int m = (int)(fmod(sec, 3600) / 60);
     int s = (int)(fmod(sec, 60));
     snprintf(buf, size, "%02d:%02d:%02d", h, m, s);
 }
-
-// MAIN – now with integer nanosecond arithmetic
+// ----
 int main(void) {
     load_finals(FINALS_FILE);
-    build_spline();   // prepare cubic spline for dUT1
+    build_spline(); 
 
     double offset = get_offset();
     char off_str[16];
@@ -284,14 +283,14 @@ int main(void) {
     format_time(sec, sec_str, sizeof(sec_str));
     printf("ITS time: %ldy %ldm %ldd %s\n", years, months, days_rem, sec_str);
 
-    // Show UTC and UT1 for reference (UT1 as integer seconds, ignoring ns)
+    // Show UTC and UT1
     char utc_buf[32], ut1_buf[32];
     strftime(utc_buf, sizeof(utc_buf), "%Y-%m-%d %H:%M:%S", gmtime(&now_ts.tv_sec));
     time_t ut1_sec = (time_t)((now_ns + now_dut1_ns) / 1000000000LL);
     strftime(ut1_buf, sizeof(ut1_buf), "%Y-%m-%d %H:%M:%S", gmtime(&ut1_sec));
-    printf("UTC: %s\nUT1: %s\n", utc_buf, ut1_buf);
+    printf("UTC: %s\nUT1: %s\n", utc_buf, ut1_buf); // actually same thing
 
-    // Cleanup
+    // clear shitty
     mpz_clear(delta_mpz);
     mpz_clear(divisor);
     mpz_clear(day_mpz);
