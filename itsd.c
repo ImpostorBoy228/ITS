@@ -19,18 +19,20 @@ static void parse_config(void) {
     if (!f) { perror("itsd.conf"); exit(1); }
     char line[1024];
 
-    if (!fgets(line, sizeof(line), f)) { fprintf(stderr, "itsd.conf: expected URL on line 1\n"); exit(1); }
+    if (!fgets(line, sizeof(line), f)) { fclose(f); fprintf(stderr, "itsd.conf: expected URL on line 1\n"); exit(1); }
     line[strcspn(line, "\r\n")] = 0;
-    if (strlen(line) == 0) { fprintf(stderr, "itsd.conf: line 1 (URL) is empty\n"); exit(1); }
+    if (strlen(line) == 0) { fclose(f); fprintf(stderr, "itsd.conf: line 1 (URL) is empty\n"); exit(1); }
     config_url = strdup(line);
+    if (!config_url) { fclose(f); fprintf(stderr, "strdup failed\n"); exit(1); }
 
-    if (!fgets(line, sizeof(line), f)) { fprintf(stderr, "itsd.conf: expected timeout on line 2\n"); exit(1); }
-    config_timeout = atol(line);
-    if (config_timeout <= 0) config_timeout = 30;
+    if (!fgets(line, sizeof(line), f)) { fclose(f); fprintf(stderr, "itsd.conf: expected timeout on line 2\n"); exit(1); }
+    char *end;
+    config_timeout = strtol(line, &end, 10);
+    if (end == line || config_timeout < 0) config_timeout = 30;
 
-    if (!fgets(line, sizeof(line), f)) { fprintf(stderr, "itsd.conf: expected interval on line 3\n"); exit(1); }
-    config_interval = atoi(line);
-    if (config_interval <= 0) config_interval = 3600;
+    if (!fgets(line, sizeof(line), f)) { fclose(f); fprintf(stderr, "itsd.conf: expected interval on line 3\n"); exit(1); }
+    config_interval = strtol(line, &end, 10);
+    if (end == line || config_interval < 0) config_interval = 3600;
 
     fclose(f);
 }
@@ -38,7 +40,9 @@ static void parse_config(void) {
 static int download_finals(void) {
     CURL *curl = curl_easy_init();
     if (!curl) return -1;
-    FILE *f = fopen(FINALS_FILE, "wb");
+    char tmpfile[1024];
+    snprintf(tmpfile, sizeof(tmpfile), "%s.tmp", FINALS_FILE);
+    FILE *f = fopen(tmpfile, "wb");
     if (!f) { curl_easy_cleanup(curl); return -1; }
     curl_easy_setopt(curl, CURLOPT_URL, config_url);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
@@ -47,7 +51,9 @@ static int download_finals(void) {
     CURLcode res = curl_easy_perform(curl);
     fclose(f);
     curl_easy_cleanup(curl);
-    return (res == CURLE_OK) ? 0 : -1;
+    if (res != CURLE_OK) { remove(tmpfile); return -1; }
+    rename(tmpfile, FINALS_FILE);
+    return 0;
 }
 
 static void do_update(void) {
@@ -81,6 +87,7 @@ static void daemonize(void) {
     if (pid < 0) { perror("fork"); exit(1); }
     if (pid > 0) exit(0);
     if (setsid() < 0) { perror("setsid"); exit(1); }
+    chdir("/");
     signal(SIGCHLD, SIG_IGN);
     close(0); close(1); close(2);
     open("/dev/null", O_RDONLY);
