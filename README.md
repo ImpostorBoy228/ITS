@@ -2,6 +2,11 @@
 
 The ITS time system defines a custom time scale anchored to the Earth's rotation (UT1) and an astronomical event: the earliest nightfall in Novosibirsk, Russia.
 
+## Development state
+Impo Time System reached stability and full concept implementation. 
+### TODO
+- rewrite in rust lol
+
 ## Overview
 
 The zero point of ITS time is not an arbitrary UTC midnight — it is the earliest astronomical nightfall (Sun altitude < -108°, i.e. the end of evening astronomical twilight) observed in Novosibirsk (latitude 55.03° N, longitude 82.93° E) over the 50-year window 1976–2026. The UT1 second-of-day of that event is stored in `offset.dat` (44193.792289 sec ≈ 12:16:33 UT1).
