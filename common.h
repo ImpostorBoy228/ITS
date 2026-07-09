@@ -60,6 +60,9 @@ void sun_position(double jd, double *decl, double *eq_time);
 double hour_angle(double lat, double decl, double zenith, int sign);
 void compute_times(int y, int m, int d, double *sunset, double *twilight_end, double *daylen, int *has_night);
 double compute_offset(void);
+// scan the 1976-2026 window and return the UT1 seconds-of-day of the earliest
+// astronomical nightfall, filling the Gregorian date it occurs on (may be NULL).
+double compute_earliest_night(int *out_y, int *out_m, int *out_d);
 
 // offset from UTC midnight to the earliest nightfall (UT1 seconds of day).
 // Reads offset.dat; if missing, invokes the its-offset binary to generate

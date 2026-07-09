@@ -7,8 +7,8 @@ all: its itstime its-offset
 common.o: common.c common.h
 	$(CC) $(CFLAGS) -c common.c -o common.o
 
-its: main.c common.o common.h
-	$(CC) $(CFLAGS) main.c common.o -o its $(LDLIBS)
+its: its.c common.o common.h
+	$(CC) $(CFLAGS) its.c common.o -o its $(LDLIBS)
 
 itstime: itstime.c common.o common.h
 	$(CC) $(CFLAGS) itstime.c common.o -o itstime $(LDLIBS)

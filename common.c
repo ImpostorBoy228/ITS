@@ -174,8 +174,9 @@ void compute_times(int y, int m, int d, double *sunset, double *twilight_end, do
 
 // offset computation (UT1-based): the earliest astronomical nightfall over
 // the 50-year window 1976-2026, expressed in UT1 seconds of the day.
-double compute_offset(void) {
+double compute_earliest_night(int *out_y, int *out_m, int *out_d) {
     double min_twilight = 1e9;
+    int best_y = 0, best_m = 0, best_d = 0;
     for (int y = 1976; y <= 2026; y++) {
         for (int m = 1; m <= 12; m++) {
             int dim;
@@ -187,11 +188,21 @@ double compute_offset(void) {
                 int has_night;
                 compute_times(y, m, d, &sunset, &twilight, &daylen, &has_night);
                 if (!has_night) continue;
-                if (twilight < min_twilight) min_twilight = twilight;
+                if (twilight < min_twilight) {
+                    min_twilight = twilight;
+                    best_y = y; best_m = m; best_d = d;
+                }
             }
         }
     }
+    if (out_y) *out_y = best_y;
+    if (out_m) *out_m = best_m;
+    if (out_d) *out_d = best_d;
     return (min_twilight < 1e9) ? min_twilight : -1.0;
+}
+
+double compute_offset(void) {
+    return compute_earliest_night(NULL, NULL, NULL);
 }
 
 double get_offset(void) {
