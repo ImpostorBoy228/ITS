@@ -2,5 +2,6 @@ gmp-6.3.0/
 its
 itstime
 its-offset
+itsd
 *.o
 offset.dat
