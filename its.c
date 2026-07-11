@@ -29,18 +29,16 @@ int main(void) {
     printf("Day start offset: %.6f UT1 sec (%s)\n", offset, off_str);
 
     // Earliest night: date and UTC time of its start
-    {
-        int ey, em, ed;
-        double twi = compute_earliest_night(&ey, &em, &ed);
-        double mjd = jdn(ey, em, ed) - 2400000.5;
-        double dut1 = interpolate_dut1_spline(mjd);
-        double utc_sec = twi - dut1;
-        while (utc_sec < 0) utc_sec += 86400.0;
-        while (utc_sec >= 86400.0) utc_sec -= 86400.0;
-        char utc_str[16];
-        format_time(utc_sec, utc_str, sizeof(utc_str));
-        printf("Earliest night: %04d-%02d-%02d starts at %s UTC\n", ey, em, ed, utc_str);
-    }
+    int ey, em, ed;
+    double twi = compute_earliest_night(&ey, &em, &ed);
+    double night_mjd = jdn(ey, em, ed) - 2400000.5;
+    double night_dut1 = interpolate_dut1_spline(night_mjd);
+    double utc_sec = twi - night_dut1;
+    while (utc_sec < 0) utc_sec += 86400.0;
+    while (utc_sec >= 86400.0) utc_sec -= 86400.0;
+    char utc_str[16];
+    format_time(utc_sec, utc_str, sizeof(utc_str));
+    printf("Earliest night: %04d-%02d-%02d starts at %s UTC\n", ey, em, ed, utc_str);
 
     // Epoch in UTC as struct timespec
     struct timespec epoch_ts;
@@ -54,42 +52,38 @@ int main(void) {
         exit(1);
     }
 
-    // dUT1 for epoch and now (spline gives double)
-    double epoch_dut1 = interpolate_dut1_spline(mjd_from_unix(epoch_ts.tv_sec));
+    // dUT1 for nightfall and now
     double now_dut1 = interpolate_dut1_spline(mjd_from_unix(now_ts.tv_sec));
 
-    // oh fuck we are going to have big shit
     mpz_t epoch_ns, now_ns;
-    mpz_t epoch_dut1_ns, now_dut1_ns;
+    mpz_t night_dut1_ns, now_dut1_ns;
     mpz_t offset_ns;
-    mpz_t epoch_start_ns;   /* start of day 0 in UT1 */
-    mpz_t delta_ns;         /* nanoseconds from epoch start */
+    mpz_t epoch_start_ns;
+    mpz_t delta_ns;
     mpz_t divisor;
     mpz_t day_mpz, sec_ns_mpz;
 
     mpz_init(epoch_ns);
     mpz_init(now_ns);
-    mpz_init(epoch_dut1_ns);
+    mpz_init(night_dut1_ns);
     mpz_init(now_dut1_ns);
     mpz_init(offset_ns);
     mpz_init(epoch_start_ns);
     mpz_init(delta_ns);
-    mpz_init_set_ui(divisor, 86400000000000ULL);  // 86400 * 1e9
+    mpz_init_set_ui(divisor, ITS_DAY_NS);
     mpz_init(day_mpz);
     mpz_init(sec_ns_mpz);
 
     timespec_to_ns(&epoch_ts, epoch_ns);
     timespec_to_ns(&now_ts, now_ns);
 
-    double_to_ns(epoch_dut1, epoch_dut1_ns);
+    double_to_ns(night_dut1, night_dut1_ns);
     double_to_ns(now_dut1, now_dut1_ns);
     double_to_ns(offset, offset_ns);
 
-    /* epoch_start_ns = epoch_ns + epoch_dut1_ns + offset_ns */
-    mpz_add(epoch_start_ns, epoch_ns, epoch_dut1_ns);
+    mpz_add(epoch_start_ns, epoch_ns, night_dut1_ns);
     mpz_add(epoch_start_ns, epoch_start_ns, offset_ns);
 
-    /* delta_ns = now_ns + now_dut1_ns - epoch_start_ns */
     mpz_add(delta_ns, now_ns, now_dut1_ns);
     mpz_sub(delta_ns, delta_ns, epoch_start_ns);
 
@@ -105,6 +99,7 @@ int main(void) {
 
     long years = day / ITS_YEAR_DAYS;
     long rem = day % ITS_YEAR_DAYS;
+    if (day < 0 && rem != 0) { years--; rem += ITS_YEAR_DAYS; }
     long months = rem / ITS_MONTH_DAYS;
     rem %= ITS_MONTH_DAYS;
     long days_rem = rem;
@@ -116,7 +111,7 @@ int main(void) {
     // clear all GMP variables
     mpz_clear(epoch_ns);
     mpz_clear(now_ns);
-    mpz_clear(epoch_dut1_ns);
+    mpz_clear(night_dut1_ns);
     mpz_clear(now_dut1_ns);
     mpz_clear(offset_ns);
     mpz_clear(epoch_start_ns);

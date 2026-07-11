@@ -87,7 +87,6 @@ static void daemonize(void) {
     if (pid < 0) { perror("fork"); exit(1); }
     if (pid > 0) exit(0);
     if (setsid() < 0) { perror("setsid"); exit(1); }
-    chdir("/");
     signal(SIGCHLD, SIG_IGN);
     close(0); close(1); close(2);
     open("/dev/null", O_RDONLY);
