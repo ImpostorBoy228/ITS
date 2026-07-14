@@ -1,5 +1,5 @@
 CC = cc
-CFLAGS = -O2 -Wall
+CFLAGS = -O2 -Wall -std=c23
 LDLIBS = -lm
 CURLLIBS = -lcurl
 

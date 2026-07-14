@@ -18,9 +18,11 @@ static void double_to_ns(double val, mpz_t out) {
 int main(int argc, char **argv) {
     int human = 0;
     int jap = 0;
+    int astro = 0;
     if (argc == 2 && strcmp(argv[1], "-h") == 0) human = 1;
     else if (argc == 2 && strcmp(argv[1], "-j") == 0) jap = 1;
-    else if (argc > 1) { fprintf(stderr, "Usage: %s [-h]\n", argv[0]); exit(1); }
+    else if (argc == 2 && strcmp(argv[1], "-A") == 0) astro = 1;
+    else if (argc > 1) { fprintf(stderr, "Usage: %s [-h|j|A]\n", argv[0]); exit(1); }
 
     load_finals(FINALS_FILE);
     build_spline();
@@ -72,7 +74,7 @@ int main(int argc, char **argv) {
     mpz_add(delta_ns, now_ns, now_dut1_ns);
     mpz_sub(delta_ns, delta_ns, epoch_start_ns);
 
-    if (!human && !jap) {
+    if (!human && !jap && !astro) {
         gmp_printf("%Zd\n", delta_ns);
     } else {
         mpz_fdiv_q(day_mpz, delta_ns, divisor);
@@ -91,7 +93,14 @@ int main(int argc, char **argv) {
         if (human) {
             format_time(sec, sec_str, sizeof(sec_str));
             printf("%ldy %ldm %ldd %s\n", years, months, days_rem, sec_str);
-        } else {
+        } else if (astro) {
+	    format_time(sec, sec_str, sizeof(sec_str));                  printf("%ldy %ldm %ldd %s\n", years, months, days_rem, sec_str);
+	    Vec3 nsk = getNsk(mjd_from_unix(now_ts.tv_sec));
+	    Vec3 sun = getSun(mjd_from_unix(now_ts.tv_sec));
+	    printf("NSK: (%.3f, %.3f, %.3f)  ", nsk.x, nsk.y, nsk.z);
+	    printf("Sun: (%.3f, %.3f, %.3f)\n", sun.x, sun.y, sun.z);
+	}
+	else {
             format_time_j(sec, sec_str, sizeof(sec_str));
             printf("%ld年%ld月%ld日%s\n", years, months, days_rem, sec_str);
         }
