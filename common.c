@@ -62,7 +62,7 @@ void load_finals(const char *filename) {
         if (strncmp(line, "MJD", 3) == 0) continue;
         char mjd_str[10], dut1_str[12];
         strncpy(mjd_str, line + 7, 8); mjd_str[8] = '\0';
-        strncpy(dut1_str, line + 57, 11); dut1_str[11] = '\0';
+        strncpy(dut1_str, line + 58, 11); dut1_str[11] = '\0';
         double mjd = atof(mjd_str);
         double dut1 = atof(dut1_str);
         if (mjd > 0 && dut1 > -10 && dut1 < 10) {
