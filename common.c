@@ -6,6 +6,40 @@
 #include <math.h>
 
 // ------------------------------------------------------------------
+// C23 bigint helpers (replace GMP for the exact nanosecond counter)
+// ------------------------------------------------------------------
+bigint double_to_ns(double val) {
+    return (bigint)(val * 1e9);
+}
+
+bigint timespec_to_ns(const struct timespec *ts) {
+    return (bigint)ts->tv_sec * 1000000000 + ts->tv_nsec;
+}
+
+bigint fdivmod(bigint a, bigint b, bigint *rem) {
+    bigint q = a / b;
+    bigint r = a % b;
+    if (r != 0 && ((r < 0) != (b < 0))) {
+        q -= 1;
+        r += b;
+    }
+    *rem = r;
+    return q;
+}
+
+void print_bigint(bigint v) {
+    if (v == 0) { putchar('0'); return; }
+    if (v < 0) { putchar('-'); v = -v; }
+    char buf[128];
+    int i = (int)sizeof(buf);
+    while (v > 0) {
+        buf[--i] = (char)('0' + v % 10);
+        v /= 10;
+    }
+    fwrite(buf + i, 1, (size_t)(sizeof(buf) - i), stdout);
+}
+
+// ------------------------------------------------------------------
 // Earth Orientation Parameters (IERS finals.all) + cubic spline
 // ------------------------------------------------------------------
 static double *mjd_arr = NULL;

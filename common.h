@@ -4,6 +4,20 @@
 #include <time.h>
 #include <stdint.h>
 
+// C23 arbitrary-precision integer (bit-precise) used for the exact
+// nanosecond counter, replacing GMP.
+typedef _BitInt(256) bigint;
+
+// convert a double number of seconds to bigint nanoseconds (truncating)
+bigint double_to_ns(double val);
+// convert struct timespec to bigint nanoseconds since the epoch
+bigint timespec_to_ns(const struct timespec *ts);
+// floor division: quotient of a/b rounded toward negative infinity;
+// *rem receives the floor remainder. returns the quotient.
+bigint fdivmod(bigint a, bigint b, bigint *rem);
+// print a bigint as a decimal integer to stdout
+void print_bigint(bigint v);
+
 /* ------------------------------------------------------------------
    ITS TIME SYSTEM – SPECIFICATIONS
    ------------------------------------------------------------------

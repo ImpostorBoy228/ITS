@@ -9,7 +9,7 @@ common.o: common.c common.h
 	$(CC) $(CFLAGS) -c common.c -o common.o
 
 itstime: itstime.c common.o common.h
-	$(CC) $(CFLAGS) itstime.c common.o -o itstime -lm -lgmp
+	$(CC) $(CFLAGS) itstime.c common.o -o itstime -lm
 
 its-offset: offset.c common.o common.h
 	$(CC) $(CFLAGS) offset.c common.o -o its-offset $(LDLIBS)

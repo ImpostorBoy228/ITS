@@ -21,7 +21,7 @@ ITS time is a signed integer of nanoseconds elapsed since that instant. It uses 
   - 1 ITS year = 147 days, 1 ITS month = 21 days (7 months per year, numbered from 0)
   - `years = days / 147`, `months = (days % 147) / 21`, `days_rem = (days % 147) % 21`
   - Time of day = remaining fraction of the current day as HH:MM:SS
-- The GMP-based binary `its` provides exact arbitrary-precision arithmetic for the nanosecond counter. The lightweight `itstime` uses 64-bit integers; both give the same result for the foreseeable range.
+- Both binaries use a C23 `_BitInt(256)` bit-precise integer for the exact arbitrary-precision nanosecond counter; there is no external bignum dependency.
 - When `offset.dat` is missing, `get_offset()` spawns `its-offset` to regenerate it, guaranteeing that the epoch offset is always available and consistent.
 
 ## Specifications
@@ -34,14 +34,14 @@ ITS time is a signed integer of nanoseconds elapsed since that instant. It uses 
 | ITS day            | 86 400 SI seconds      | Counted in UT1                           |
 | ITS year           | 147 days               | 7 months of 21 days each                 |
 | ITS month          | 21 days                | Numbered 0–6                             |
-| Time resolution    | 1 nanosecond           | Signed 64-bit or arbitrary-precision     |
+| Time resolution    | 1 nanosecond           | C23 `_BitInt(256)`      |
 | DUT1 data          | IERS finals.all        | Natural cubic spline interpolation       |
 | Latitude / Lon.    | 55.03 N / 82.93 E      | Novosibirsk, Russia                      |
 | Twilight angle     | 108° (astronomical)    | Sun center < -108°                       |
 
 ## Building
 
-Prerequisites: a C compiler, standard math library (`-lm`), GMP (`-lgmp`), and libcurl (`-lcurl`, required only for `itsd`).
+Prerequisites: a C23-capable compiler (GCC 14+ or Clang 16+), the standard math library (`-lm`), and libcurl (`-lcurl`, required only for `itsd`). No bignum library is needed.
 
 ```sh
 make
@@ -63,7 +63,7 @@ make clean
 
 ### `its` — base implementation
 
-Full-featured reference implementation using GNU Multiple Precision Arithmetic (GMP). Output includes the day-start offset, earliest-night metadata, the raw nanosecond delta as an arbitrary-precision integer, and the human-readable ITS calendar date.
+Full-featured reference implementation using a C23 `_BitInt(256)` arbitrary-precision integer for the nanosecond counter. Output includes the day-start offset, earliest-night metadata, the raw nanosecond delta as a decimal integer, and the human-readable ITS calendar date.
 
 ```
 ./its

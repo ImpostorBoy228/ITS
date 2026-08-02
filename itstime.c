@@ -3,17 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <gmp.h>
-
-static void timespec_to_ns(const struct timespec *ts, mpz_t out) {
-    mpz_set_si(out, ts->tv_sec);
-    mpz_mul_ui(out, out, 1000000000ULL);
-    mpz_add_ui(out, out, ts->tv_nsec);
-}
-
-static void double_to_ns(double val, mpz_t out) {
-    mpz_set_d(out, val * 1e9);
-}
 
 int main(int argc, char **argv) {
     int human = 0;
@@ -42,46 +31,24 @@ int main(int argc, char **argv) {
     epoch_ts.tv_sec = (time_t)EPOCH_UNIX;
     epoch_ts.tv_nsec = 0;
 
-    mpz_t epoch_ns, now_ns;
-    mpz_t night_dut1_ns, now_dut1_ns;
-    mpz_t offset_ns;
-    mpz_t epoch_start_ns;
-    mpz_t delta_ns;
-    mpz_t divisor;
-    mpz_t day_mpz, sec_ns_mpz;
+    bigint epoch_ns = timespec_to_ns(&epoch_ts);
+    bigint now_ns = timespec_to_ns(&now_ts);
+    bigint night_dut1_ns = double_to_ns(night_dut1);
+    bigint now_dut1_ns = double_to_ns(now_dut1);
+    bigint offset_ns = double_to_ns(offset);
 
-    mpz_init(epoch_ns);
-    mpz_init(now_ns);
-    mpz_init(night_dut1_ns);
-    mpz_init(now_dut1_ns);
-    mpz_init(offset_ns);
-    mpz_init(epoch_start_ns);
-    mpz_init(delta_ns);
-    mpz_init_set_ui(divisor, ITS_DAY_NS);
-    mpz_init(day_mpz);
-    mpz_init(sec_ns_mpz);
-
-    timespec_to_ns(&epoch_ts, epoch_ns);
-    timespec_to_ns(&now_ts, now_ns);
-
-    double_to_ns(night_dut1, night_dut1_ns);
-    double_to_ns(now_dut1, now_dut1_ns);
-    double_to_ns(offset, offset_ns);
-
-    mpz_add(epoch_start_ns, epoch_ns, night_dut1_ns);
-    mpz_add(epoch_start_ns, epoch_start_ns, offset_ns);
-
-    mpz_add(delta_ns, now_ns, now_dut1_ns);
-    mpz_sub(delta_ns, delta_ns, epoch_start_ns);
+    bigint epoch_start_ns = epoch_ns + night_dut1_ns + offset_ns;
+    bigint delta_ns = now_ns + now_dut1_ns - epoch_start_ns;
 
     if (!human && !jap && !astro) {
-        gmp_printf("%Zd\n", delta_ns);
+        print_bigint(delta_ns);
+        putchar('\n');
     } else {
-        mpz_fdiv_q(day_mpz, delta_ns, divisor);
-        mpz_fdiv_r(sec_ns_mpz, delta_ns, divisor);
+        bigint sec_ns;
+        bigint day_b = fdivmod(delta_ns, (bigint)ITS_DAY_NS, &sec_ns);
 
-        long day = mpz_get_si(day_mpz);
-        double sec = mpz_get_d(sec_ns_mpz) / 1e9;
+        long day = (long)day_b;
+        double sec = (double)sec_ns / 1e9;
         long years = day / ITS_YEAR_DAYS;
         long rem = day % ITS_YEAR_DAYS;
         if (day < 0 && rem != 0) { years--; rem += ITS_YEAR_DAYS; }
@@ -94,28 +61,17 @@ int main(int argc, char **argv) {
             format_time(sec, sec_str, sizeof(sec_str));
             printf("%ldy %ldm %ldd %s\n", years, months, days_rem, sec_str);
         } else if (astro) {
-	    format_time(sec, sec_str, sizeof(sec_str));                  printf("%ldy %ldm %ldd %s\n", years, months, days_rem, sec_str);
-	    Vec3 nsk = getNsk(mjd_from_unix(now_ts.tv_sec));
-	    Vec3 sun = getSun(mjd_from_unix(now_ts.tv_sec));
-	    printf("NSK: (%.3f, %.3f, %.3f)  ", nsk.x, nsk.y, nsk.z);
-	    printf("Sun: (%.3f, %.3f, %.3f)\n", sun.x, sun.y, sun.z);
-	}
-	else {
+            format_time(sec, sec_str, sizeof(sec_str));
+            printf("%ldy %ldm %ldd %s\n", years, months, days_rem, sec_str);
+            Vec3 nsk = getNsk(mjd_from_unix(now_ts.tv_sec));
+            Vec3 sun = getSun(mjd_from_unix(now_ts.tv_sec));
+            printf("NSK: (%.3f, %.3f, %.3f)  ", nsk.x, nsk.y, nsk.z);
+            printf("Sun: (%.3f, %.3f, %.3f)\n", sun.x, sun.y, sun.z);
+        } else {
             format_time_j(sec, sec_str, sizeof(sec_str));
             printf("%ld年%ld月%ld日%s\n", years, months, days_rem, sec_str);
         }
     }
-
-    mpz_clear(epoch_ns);
-    mpz_clear(now_ns);
-    mpz_clear(night_dut1_ns);
-    mpz_clear(now_dut1_ns);
-    mpz_clear(offset_ns);
-    mpz_clear(epoch_start_ns);
-    mpz_clear(delta_ns);
-    mpz_clear(divisor);
-    mpz_clear(day_mpz);
-    mpz_clear(sec_ns_mpz);
 
     free_eop();
     return 0;
