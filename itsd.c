@@ -57,8 +57,10 @@ static int download_finals(void) {
 }
 
 static void do_update(void) {
-    if (download_finals() != 0) {
-        // download failed; keep old finals.all
+    if (download_finals() == 0) {
+        free_eop();
+        load_finals(FINALS_FILE);
+        build_spline();
     }
     double offset = compute_offset();
     if (offset < 0.0) return;
@@ -100,6 +102,9 @@ int main(int argc, char **argv) {
     else if (argc > 1) { fprintf(stderr, "Usage: %s [-d]\n", argv[0]); exit(1); }
 
     parse_config();
+
+    load_finals(FINALS_FILE);
+    build_spline();
 
     if (daemon_mode) daemonize();
 

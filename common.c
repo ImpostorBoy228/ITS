@@ -5,9 +5,6 @@
 #include <string.h>
 #include <math.h>
 
-// ------------------------------------------------------------------
-// C23 bigint helpers (replace GMP for the exact nanosecond counter)
-// ------------------------------------------------------------------
 bigint double_to_ns(double val) {
     return (bigint)(val * 1e9);
 }
@@ -39,9 +36,26 @@ void print_bigint(bigint v) {
     fwrite(buf + i, 1, (size_t)(sizeof(buf) - i), stdout);
 }
 
-// ------------------------------------------------------------------
-// Earth Orientation Parameters (IERS finals.all) + cubic spline
-// ------------------------------------------------------------------
+bigint its_elapsed_ns(const struct timespec *now_ts, double offset) {
+    struct timespec epoch_ts = { (time_t)EPOCH_UNIX, 0 };
+    bigint epoch_ns = timespec_to_ns(&epoch_ts);
+    bigint now_ns = timespec_to_ns(now_ts);
+    bigint offset_ns = double_to_ns(offset);
+    bigint epoch_dut1_ns = double_to_ns(interpolate_dut1_spline(mjd_from_unix((time_t)EPOCH_UNIX)));
+    return now_ns - (epoch_ns + offset_ns - epoch_dut1_ns);
+}
+
+// floor-based decomposition of an ITS day count into years/months/days_rem
+void decompose_its(long day, long *years, long *months, long *days_rem) {
+    long y = day / ITS_YEAR_DAYS;
+    long rem = day % ITS_YEAR_DAYS;
+    if (day < 0 && rem != 0) { y--; rem += ITS_YEAR_DAYS; }
+    long m = rem / ITS_MONTH_DAYS;
+    *years = y;
+    *months = m;
+    *days_rem = rem % ITS_MONTH_DAYS;
+}
+
 static double *mjd_arr = NULL;
 static double *dut1_arr = NULL;
 static int n_eop = 0;
@@ -76,14 +90,25 @@ double mjd_from_unix(time_t t) {
     return (double)t / SECS_PER_DAY + 40587.0;   // 1970-01-01 = MJD 40587
 }
 
+static int dut1_field_blank(const char *line) {
+    char buf[12];
+    strncpy(buf, line + 58, 11);
+    buf[11] = '\0';
+    return strspn(buf, " \t\r\n") == strlen(buf);
+}
+
 void load_finals(const char *filename) {
     FILE *f = fopen(filename, "r");
-    if (!f) { perror("finals.all"); exit(1); }
+    if (!f) {
+        fprintf(stderr, "SEX ALERT: fucked up to open %s, continuing without DUT1\n", filename);
+        return;
+    }
     char line[256];
     // first pass: count valid lines
     while (fgets(line, sizeof(line), f)) {
         if (strlen(line) < 68) continue;
         if (strncmp(line, "MJD", 3) == 0) continue;
+        if (dut1_field_blank(line)) continue;
         n_eop++;
     }
     rewind(f);
@@ -97,6 +122,7 @@ void load_finals(const char *filename) {
         char mjd_str[10], dut1_str[12];
         strncpy(mjd_str, line + 7, 8); mjd_str[8] = '\0';
         strncpy(dut1_str, line + 58, 11); dut1_str[11] = '\0';
+        if (dut1_field_blank(line)) continue;
         double mjd = atof(mjd_str);
         double dut1 = atof(dut1_str);
         if (mjd > 0 && dut1 > -10 && dut1 < 10) {
@@ -109,7 +135,6 @@ void load_finals(const char *filename) {
     fclose(f);
 }
 
-/* Build natural cubic spline coefficients (second derivatives) */
 void build_spline(void) {
     if (n_eop < 2) {
         second_deriv = NULL;
@@ -168,7 +193,6 @@ double interpolate_dut1_spline(double mjd) {
     return (1-t)*y0 + t*y1 + (t*t*t - t)*((1-t)*s0 + t*s1)*h*h/6.0;
 }
 
-// Astronomy: Julian Date, Sun position, hour angle, twilight times
 double jdn(int y, int m, int d) {
     if (m <= 2) { y--; m += 12; }
     int A = y / 100;
@@ -230,12 +254,10 @@ void compute_times(int y, int m, int d, double *sunset, double *twilight_end, do
     *daylen = 2.0 * ha_sunset;
 }
 
-// offset computation (UT1-based): the earliest astronomical nightfall over
-// the 50-year window 1976-2026, expressed in UT1 seconds of the day.
 double compute_earliest_night(int *out_y, int *out_m, int *out_d) {
     double min_twilight = 1e9;
     int best_y = 0, best_m = 0, best_d = 0;
-    for (int y = 1976; y < 2026; y++) {
+    for (int y = 1976; y <= 2026; y++) {
         for (int m = 1; m <= 12; m++) {
             int dim;
             if (m == 2) dim = (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) ? 29 : 28;
@@ -260,7 +282,12 @@ double compute_earliest_night(int *out_y, int *out_m, int *out_d) {
 }
 
 double compute_offset(void) {
-    return compute_earliest_night(NULL, NULL, NULL);
+    int y, m, d;
+    double twi = compute_earliest_night(&y, &m, &d);
+    if (twi < 0.0) return -1.0;
+    if (n_eop == 0) return twi;
+    double mjd = jdn(y, m, d) - 2400000.5;
+    return twi + interpolate_dut1_spline(mjd);
 }
 
 double get_offset(void) {
@@ -278,7 +305,6 @@ double get_offset(void) {
     exit(1);
 }
 
-// formatting helpers
 void format_time(double sec, char *buf, size_t size) {
     int h = (int)(sec / 3600);
     int m = (int)(fmod(sec, 3600) / 60);

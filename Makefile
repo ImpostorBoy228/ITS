@@ -19,3 +19,13 @@ itsd: itsd.c common.o common.h
 
 clean:
 	rm -f its itstime its-offset itsd common.o
+
+TESTS_DIR := tests(vibecoded)
+
+.PHONY: tests test
+
+tests: common.o
+	$(CC) $(CFLAGS) -I. '$(TESTS_DIR)'/*.c common.o -o tests $(LDLIBS)
+	./tests
+
+test: tests

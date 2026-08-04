@@ -1,11 +1,10 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#include <stddef.h>
 #include <time.h>
 #include <stdint.h>
 
-// C23 arbitrary-precision integer (bit-precise) used for the exact
-// nanosecond counter, replacing GMP.
 typedef _BitInt(256) bigint;
 
 // convert a double number of seconds to bigint nanoseconds (truncating)
@@ -17,6 +16,9 @@ bigint timespec_to_ns(const struct timespec *ts);
 bigint fdivmod(bigint a, bigint b, bigint *rem);
 // print a bigint as a decimal integer to stdout
 void print_bigint(bigint v);
+bigint its_elapsed_ns(const struct timespec *now_ts, double offset);
+// floor-based decomposition of an ITS day count into years/months/days_rem
+void decompose_its(long day, long *years, long *months, long *days_rem);
 
 /* ------------------------------------------------------------------
    ITS TIME SYSTEM – SPECIFICATIONS
@@ -64,7 +66,7 @@ Vec3 getNsk(double mjd);
 #define M_PI 3.14159265358979323846
 #endif
 
-#define ITS_DAY_NS 86400000000000ULL   // 86400 * 1e9
+#define ITS_DAY_NS ((bigint)86400000000000)   // 86400 * 1e9
 #define ITS_YEAR_DAYS 147
 #define ITS_MONTH_DAYS 21
 
@@ -74,26 +76,18 @@ void build_spline(void);
 double interpolate_dut1_spline(double mjd);
 double mjd_from_unix(time_t t);
 
-// astronomical helpers
 double jdn(int y, int m, int d);
 void sun_position(double jd, double *decl, double *eq_time);
 double hour_angle(double lat, double decl, double zenith, int sign);
 void compute_times(int y, int m, int d, double *sunset, double *twilight_end, double *daylen, int *has_night);
 double compute_offset(void);
-// scan the 1976-2026 window and return the UT1 seconds-of-day of the earliest
-// astronomical nightfall, filling the Gregorian date it occurs on (may be NULL).
 double compute_earliest_night(int *out_y, int *out_m, int *out_d);
 
-// offset from UTC midnight to the earliest nightfall (UT1 seconds of day).
-// Reads offset.dat; if missing, invokes the its-offset binary to generate
-// it, then reads the result.
 double get_offset(void);
 
-// time formatting
 void format_time(double sec, char *buf, size_t size);
 void format_time_j(double sec, char *buf, size_t size);
 
-// release Earth Orientation Parameter state
 void free_eop(void);
 
 #endif

@@ -5,6 +5,8 @@
 #include <stdlib.h>
 
 int main(void) {
+    load_finals(FINALS_FILE);
+    build_spline();
     double offset = compute_offset();
     if (offset < 0.0) { fprintf(stderr, "Offset computation fuckup\n"); return 1; }
     FILE *f = fopen(OFFSET_FILE, "w");

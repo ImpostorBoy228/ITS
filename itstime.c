@@ -17,44 +17,23 @@ int main(int argc, char **argv) {
     build_spline();
 
     double offset = get_offset();
-    int ey, em, ed;
-    compute_earliest_night(&ey, &em, &ed);
-    double night_mjd = jdn(ey, em, ed) - 2400000.5;
-    double night_dut1 = interpolate_dut1_spline(night_mjd);
 
     struct timespec now_ts;
     if (clock_gettime(CLOCK_REALTIME, &now_ts) == -1) { perror("clock_gettime"); exit(1); }
 
-    double now_dut1 = interpolate_dut1_spline(mjd_from_unix(now_ts.tv_sec));
-
-    struct timespec epoch_ts;
-    epoch_ts.tv_sec = (time_t)EPOCH_UNIX;
-    epoch_ts.tv_nsec = 0;
-
-    bigint epoch_ns = timespec_to_ns(&epoch_ts);
-    bigint now_ns = timespec_to_ns(&now_ts);
-    bigint night_dut1_ns = double_to_ns(night_dut1);
-    bigint now_dut1_ns = double_to_ns(now_dut1);
-    bigint offset_ns = double_to_ns(offset);
-
-    bigint epoch_start_ns = epoch_ns + night_dut1_ns + offset_ns;
-    bigint delta_ns = now_ns + now_dut1_ns - epoch_start_ns;
+    bigint delta_ns = its_elapsed_ns(&now_ts, offset);
 
     if (!human && !jap && !astro) {
         print_bigint(delta_ns);
         putchar('\n');
     } else {
         bigint sec_ns;
-        bigint day_b = fdivmod(delta_ns, (bigint)ITS_DAY_NS, &sec_ns);
+        bigint day_b = fdivmod(delta_ns, ITS_DAY_NS, &sec_ns);
 
         long day = (long)day_b;
         double sec = (double)sec_ns / 1e9;
-        long years = day / ITS_YEAR_DAYS;
-        long rem = day % ITS_YEAR_DAYS;
-        if (day < 0 && rem != 0) { years--; rem += ITS_YEAR_DAYS; }
-        long months = rem / ITS_MONTH_DAYS;
-        rem %= ITS_MONTH_DAYS;
-        long days_rem = rem;
+        long years, months, days_rem;
+        decompose_its(day, &years, &months, &days_rem);
 
         char sec_str[16];
         if (human) {
