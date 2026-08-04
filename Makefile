@@ -1,5 +1,5 @@
 CC = cc
-CFLAGS = -O2 -Wall -std=c2x -D_DEFAULT_SOURCE
+CFLAGS = -O2 -Wall -std=c23 -D_DEFAULT_SOURCE
 LDLIBS = -lm
 CURLLIBS = -lcurl
 
