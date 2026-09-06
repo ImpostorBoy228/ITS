@@ -19,4 +19,4 @@ jobs:
     - name: get finals
       run: cd its-rs && wget https://datacenter.iers.org/data/9/finals2000A.all
     - name: Run tests
-      run: cd its-rs && cargo test --verbose
+      run: cd its-rs && cargo test --verbose --lib
