@@ -1,11 +1,12 @@
 [package]
 name = "its-rs"
-version = "0.1.0"
+version = "0.1.7"
 edition = "2024"
+description = "Rust implementation of Impo Time System - 147 days in year, consistent day count in month, 0:00 starts in Novosibirsk's earliest night in 50-year span in history"
+license = "MIT"
+repository = "https://github.com/ImpostorBoy228/ITS"
+# readme = "README.md"
+keywords = ["time", "time systems", "ImpostorBoy", "impo ecosystem"]
+categories = ["date-and-time"]
 
 [dependencies]
-num-bigint = "0.5.1"
-num-traits = "0.2.19"
-reqwest = "0.13.4"
-serde = "1.0.229"
-tokio = "1.53.1"
