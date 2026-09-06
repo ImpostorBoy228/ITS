@@ -18,7 +18,7 @@ void test_offset(void) {
         double off = compute_offset();
         CHECK_MSG(off >= 44193.5 && off <= 44193.9, "compute_offset=%g", off);
         double got = get_offset();
-        CHECK_NEAR(got, 44193.737495, 1e-6);
+        CHECK_NEAR(got, 44193.699520, 1e-6);
         CHECK_MSG(fabs(off - got) < 0.001, "offset drift %g vs %g", off, got);
     }
 }

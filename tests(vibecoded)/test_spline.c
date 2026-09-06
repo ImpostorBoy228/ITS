@@ -80,7 +80,7 @@ void test_spline(void) {
     {
         double v = interpolate_dut1_spline(60000.5);
         CHECK_MSG(v > 0.10 && v < 0.20, "fixture midpoint 60000.5 got %g", v);
-        CHECK_NEAR(v, 0.16, 1e-6);
+        CHECK_NEAR(v, 0.17, 1e-6);
     }
     {
         double v = interpolate_dut1_spline(60002.5);
@@ -113,17 +113,17 @@ void test_spline(void) {
     printf("   finals.all: %d real knots parsed\n", nk);
 
     CHECK_NEAR(interpolate_dut1_spline(41684.0), 0.8084178, 1e-6);
-    CHECK_NEAR(interpolate_dut1_spline(61213.0), 0.0113315, 1e-6);
-    CHECK_NEAR(interpolate_dut1_spline(61386.0), -0.0547940, 1e-6);
-    CHECK_NEAR(interpolate_dut1_spline(61624.0), -0.0559647, 1e-6);
-    CHECK_NEAR(interpolate_dut1_spline(61674.0), -0.0559647, 1e-6);
+    CHECK_NEAR(interpolate_dut1_spline(61213.0), 0.0113318, 1e-6);
+    CHECK_NEAR(interpolate_dut1_spline(61386.0), -0.0927683, 1e-6);
+    CHECK_NEAR(interpolate_dut1_spline(61624.0), -0.1315681, 1e-6);
+    CHECK_NEAR(interpolate_dut1_spline(61674.0), -0.1044597, 1e-6);
     CHECK_NEAR(interpolate_dut1_spline(40587.0), 0.8084178, 1e-6);
 
-    CHECK(nk == 19941);
+    CHECK(nk == 19976);
     CHECK_NEAR(knots[0].mjd, 41684.0, 1e-9);
     CHECK_NEAR(knots[0].dut1, 0.8084178, 1e-9);
-    CHECK_NEAR(knots[nk - 1].mjd, 61624.0, 1e-9);
-    CHECK_NEAR(knots[nk - 1].dut1, -0.0559647, 1e-9);
+    CHECK_NEAR(knots[nk - 1].mjd, 61659.0, 1e-9);
+    CHECK_NEAR(knots[nk - 1].dut1, -0.1044597, 1e-9);
 
     for (int i = 0; i < nk; i++) {
         double got = interpolate_dut1_spline(knots[i].mjd);

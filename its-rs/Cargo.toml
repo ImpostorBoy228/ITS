@@ -1,0 +1,11 @@
+[package]
+name = "its-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+num-bigint = "0.5.1"
+num-traits = "0.2.19"
+reqwest = "0.13.4"
+serde = "1.0.229"
+tokio = "1.53.1"

@@ -190,7 +190,7 @@ double interpolate_dut1_spline(double mjd) {
     if (!second_deriv)
         return (1-t)*y0 + t*y1;
     double s0 = second_deriv[i], s1 = second_deriv[i+1];
-    return (1-t)*y0 + t*y1 + (t*t*t - t)*((1-t)*s0 + t*s1)*h*h/6.0;
+    return (1-t)*y0 + t*y1 + (((1-t)*(1-t)*(1-t) - (1-t))*s0 + (t*t*t - t)*s1)*h*h/6.0;
 }
 
 double jdn(int y, int m, int d) {
