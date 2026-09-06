@@ -6,7 +6,7 @@ description = "Rust implementation of Impo Time System - 147 days in year, consi
 license = "MIT"
 repository = "https://github.com/ImpostorBoy228/ITS"
 # readme = "README.md"
-keywords = ["time", "time systems", "ImpostorBoy", "impo ecosystem"]
+keywords = ["time", "ImpostorBoy", "impo", "ecosystem"]
 categories = ["date-and-time"]
 
 [dependencies]
