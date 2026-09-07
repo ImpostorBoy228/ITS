@@ -1,10 +1,11 @@
 use std::io::{BufRead, BufReader};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 // use num_bigint::BigUint;
-// use num_traits::{One, Zero}; 
-// blazing fast until year 2554 
+// use num_traits::{One, Zero};
+// blazing fast until year 2554
 
-pub const SECSPERDAY: u64 = 24*60*60;
+pub const SECSPERDAY: u64 = 24 * 60 * 60;
 const ITS_YEAR_DAYS: i64 = 147;
 const ITS_MONTH_DAYS: i64 = 21;
 const LON: f64 = 82.93;
@@ -13,9 +14,11 @@ const ZENITH: f64 = 108.0;
 const PI: f64 = std::f64::consts::PI;
 pub const EPOCH_UNIX: f64 = 1782086400.0;
 
-fn dut1_field_blank(line: &str) -> bool { 
+fn dut1_field_blank(line: &str) -> bool {
     // this checks DUT1 field is blank
-    if line.len() < 69 { return true; }
+    if line.len() < 69 {
+        return true;
+    }
     line[58..69].chars().all(|c| c.is_whitespace())
 }
 
@@ -24,7 +27,9 @@ pub fn load_finals(finals: &[u8]) -> Result<(Vec<f64>, Vec<f64>), String> {
     let veclen = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_secs() / SECSPERDAY - 1096;
+        .as_secs()
+        / SECSPERDAY
+        - 1096;
 
     let reader = BufReader::new(finals);
     let mut mjd_vec = Vec::with_capacity(veclen.try_into().unwrap());
@@ -32,9 +37,15 @@ pub fn load_finals(finals: &[u8]) -> Result<(Vec<f64>, Vec<f64>), String> {
 
     for line in reader.lines() {
         let line = line.map_err(|e| e.to_string())?;
-        if line.len() < 69 { continue; }
-        if line.starts_with("MJD") { continue; }
-        if dut1_field_blank(&line) { continue; }
+        if line.len() < 69 {
+            continue;
+        }
+        if line.starts_with("MJD") {
+            continue;
+        }
+        if dut1_field_blank(&line) {
+            continue;
+        }
 
         let mjd = line[7..15].trim().parse::<f64>().unwrap_or(0.0);
         let dut1 = line[58..69].trim().parse::<f64>().unwrap_or(0.0);
@@ -44,20 +55,20 @@ pub fn load_finals(finals: &[u8]) -> Result<(Vec<f64>, Vec<f64>), String> {
         }
     }
 
-    Ok((mjd_vec, dut1_vec))    
+    Ok((mjd_vec, dut1_vec))
 }
 
 pub fn build_spline(
     // this builds natural spline and returns it
     mjd_vec: &[f64],
-    dut1_vec: &[f64]) 
-    -> Option<Vec<f64>> {
+    dut1_vec: &[f64],
+) -> Option<Vec<f64>> {
     let n = mjd_vec.len();
     if n < 2 || mjd_vec.len() != dut1_vec.len() {
         return None;
     }
-    let mut h = Vec::with_capacity(n-1);
-    let mut b = Vec::with_capacity(n-1);
+    let mut h = Vec::with_capacity(n - 1);
+    let mut b = Vec::with_capacity(n - 1);
     for i in 0..n - 1 {
         let hi = mjd_vec[i + 1] - mjd_vec[i];
         h.push(hi);
@@ -89,7 +100,7 @@ pub fn build_spline(
     l[last] = 0.0;
     mu[last] = 0.0;
     z[last] = 0.0;
-    
+
     // cursed technique
     for i in 1..n {
         let factor = l[i] / d[i - 1];
@@ -107,20 +118,20 @@ pub fn build_spline(
     Some(second_deriv)
 }
 
-pub fn interpol(
-    mjd: f64,
-    mjd_vec: &[f64],
-    dut1_vec: &[f64],
-    second_deriv: Option<&[f64]>) 
-    -> f64 {
+pub fn interpol(mjd: f64, mjd_vec: &[f64], dut1_vec: &[f64], second_deriv: Option<&[f64]>) -> f64 {
     let n = mjd_vec.len();
-    if n==0 {return 0.0}
-    if mjd <= mjd_vec[0] {return dut1_vec[0]}
-    if mjd >= mjd_vec[n-1] {return dut1_vec[n-1]}
-    let mut i = 0;
-    while i < n - 1 && mjd_vec[i + 1] < mjd {
-        i += 1;
+    if n == 0 {
+        return 0.0;
     }
+    if mjd <= mjd_vec[0] {
+        return dut1_vec[0];
+    }
+    if mjd >= mjd_vec[n - 1] {
+        return dut1_vec[n - 1];
+    }
+
+    let i = mjd_vec.partition_point(|&x| x < mjd) - 1;
+
     let h = mjd_vec[i + 1] - mjd_vec[i];
     let t = (mjd - mjd_vec[i]) / h;
     let y0 = dut1_vec[i];
@@ -138,22 +149,23 @@ pub fn interpol(
     let one_minus_t = 1.0 - t;
     let t_cube = t * t * t;
 
-    let correction = ((one_minus_t * one_minus_t * one_minus_t - one_minus_t) * s0
-        + (t_cube - t) * s1)
-        * h * h
-        / 6.0;
+    let correction =
+        ((one_minus_t * one_minus_t * one_minus_t - one_minus_t) * s0 + (t_cube - t) * s1) * h * h
+            / 6.0;
 
     linear + correction
 }
 
 fn jdn(y: i32, m: i32, d: i32) -> f64 {
     let (mut y, mut m) = (y, m);
-    if m <= 2 { y -= 1; m += 12; }
+    if m <= 2 {
+        y -= 1;
+        m += 12;
+    }
     let a = y / 100;
     let b = 2 - a + a / 4;
-    (365.25 * (y + 4716) as f64).floor()
-        + (30.6001 * (m + 1) as f64).floor()
-        + d as f64 + b as f64 - 1524.5
+    (365.25 * (y + 4716) as f64).floor() + (30.6001 * (m + 1) as f64).floor() + d as f64 + b as f64
+        - 1524.5
 }
 
 pub fn sun_position(jd: f64) -> (f64, f64) {
@@ -163,8 +175,8 @@ pub fn sun_position(jd: f64) -> (f64, f64) {
     let m = (357.52911 + 35999.05029 * t - 0.0001537 * t * t) % 360.0;
     let m = if m < 0.0 { m + 360.0 } else { m };
     let c = (1.914602 - 0.004817 * t - 0.000014 * t * t) * (m * PI / 180.0).sin()
-          + (0.019993 - 0.000101 * t) * (2.0 * m * PI / 180.0).sin()
-          + 0.000289 * (3.0 * m * PI / 180.0).sin();
+        + (0.019993 - 0.000101 * t) * (2.0 * m * PI / 180.0).sin()
+        + 0.000289 * (3.0 * m * PI / 180.0).sin();
     let sun_lon = l0 + c;
     let obliq = 23.439291 - 0.0130042 * t;
     let alpha = (obliq * PI / 180.0).cos() * (sun_lon * PI / 180.0).sin();
@@ -172,8 +184,12 @@ pub fn sun_position(jd: f64) -> (f64, f64) {
     let alpha = (alpha % 360.0 + 360.0) % 360.0;
     let delta = ((obliq * PI / 180.0).sin() * (sun_lon * PI / 180.0).sin()).asin() * 180.0 / PI;
     let mut e = l0 - alpha;
-    if e < -180.0 { e += 360.0; }
-    if e > 180.0 { e -= 360.0; }
+    if e < -180.0 {
+        e += 360.0;
+    }
+    if e > 180.0 {
+        e -= 360.0;
+    }
     (delta, e * 4.0)
 }
 
@@ -199,75 +215,99 @@ pub fn compute_times(y: i32, m: i32, d: i32) -> (f64, f64, f64, bool) {
     }
     let mut sunset = noon + ha_sunset;
     let mut twilight = noon + ha_twilight;
-    if sunset < 0.0 { sunset += 24.0; }
-    if twilight < 0.0 { twilight += 24.0; }
-    if sunset >= 24.0 { sunset -= 24.0; }
-    if twilight >= 24.0 { twilight -= 24.0; }
+    if sunset < 0.0 {
+        sunset += 24.0;
+    }
+    if twilight < 0.0 {
+        twilight += 24.0;
+    }
+    if sunset >= 24.0 {
+        sunset -= 24.0;
+    }
+    if twilight >= 24.0 {
+        twilight -= 24.0;
+    }
     (sunset * 3600.0, twilight * 3600.0, 2.0 * ha_sunset, true)
 }
 
-pub fn compute_earliest_night() -> (f64, i32, i32, i32) {
-    let mut min_twilight = 1e9;
-    let mut best_y = 0;
-    let mut best_m = 0;
-    let mut best_d = 0;
-    for y in 1976..=2026 {
-        for m in 1..=12 {
-            let dim = if m == 2 {
-                if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 29 } else { 28 }
-            } else if m == 4 || m == 6 || m == 9 || m == 11 {
-                30
-            } else {
-                31
-            };
-            for d in 1..=dim {
-                let (_, twilight, _, has_night) = compute_times(y, m, d);
-                if !has_night { continue; }
-                if twilight < min_twilight {
-                    min_twilight = twilight;
-                    best_y = y;
-                    best_m = m;
-                    best_d = d;
+fn compute_earliest_night() -> &'static (f64, i32, i32, i32) {
+    static EARLIEST: OnceLock<(f64, i32, i32, i32)> = OnceLock::new();
+    EARLIEST.get_or_init(|| {
+        let mut min_twilight = 1e9;
+        let mut best_y = 0;
+        let mut best_m = 0;
+        let mut best_d = 0;
+        for y in 1976..=2026 {
+            for m in 1..=12 {
+                let dim = if m == 2 {
+                    if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) {
+                        29
+                    } else {
+                        28
+                    }
+                } else if m == 4 || m == 6 || m == 9 || m == 11 {
+                    30
+                } else {
+                    31
+                };
+                for d in 1..=dim {
+                    let (_, twilight, _, has_night) = compute_times(y, m, d);
+                    if !has_night {
+                        continue;
+                    }
+                    if twilight < min_twilight {
+                        min_twilight = twilight;
+                        best_y = y;
+                        best_m = m;
+                        best_d = d;
+                    }
                 }
             }
         }
-    }
-    if min_twilight < 1e9 {
-        (min_twilight, best_y, best_m, best_d)
-    } else {
-        (-1.0, 0, 0, 0)
-    }
+        if min_twilight < 1e9 {
+            (min_twilight, best_y, best_m, best_d)
+        } else {
+            (-1.0, 0, 0, 0)
+        }
+    })
 }
 
-pub fn cumpute_offset(
-    mjd_vec: &[f64],
-    dut1_vec: &[f64],
-    second_deriv: Option<&[f64]>) 
-    -> f64 {
-    let (twi, y, m, d) = compute_earliest_night();
-    if twi < 0.0 { return -1.0; }
-    if mjd_vec.is_empty() { return twi; }
+pub fn cumpute_offset(mjd_vec: &[f64], dut1_vec: &[f64], second_deriv: Option<&[f64]>) -> f64 {
+    let (twi, y, m, d) = *compute_earliest_night();
+    if twi < 0.0 {
+        return -1.0;
+    }
+    if mjd_vec.is_empty() {
+        return twi;
+    }
     let mjd = jdn(y, m, d) - 2400000.5;
     twi + interpol(mjd, mjd_vec, dut1_vec, second_deriv)
 }
 
-pub fn its_elapsed_ns( // update to bigint after 528 years
+pub fn its_elapsed_ns(
+    // update to bigint after 528 years
     timestamp_ns: u64,
     offset: f64,
     mjd_vec: &[f64],
     dut1_vec: &[f64],
-    second_deriv: Option<&[f64]>) 
-    ->  u64 {
+    second_deriv: Option<&[f64]>,
+) -> u64 {
     let epoch_ns = (EPOCH_UNIX as u64) * 1_000_000_000;
     let offset_ns = (offset * 1_000_000_000.0) as i64;
-    let epoch_dut1_ns = (1_000_000_000.0 * interpol(EPOCH_UNIX / SECSPERDAY as f64 + 40587.0, mjd_vec, dut1_vec, second_deriv)) as i64;
+    let epoch_dut1_ns = (1_000_000_000.0
+        * interpol(
+            EPOCH_UNIX / SECSPERDAY as f64 + 40587.0,
+            mjd_vec,
+            dut1_vec,
+            second_deriv,
+        )) as i64;
     (timestamp_ns as i64 - epoch_ns as i64 - offset_ns + epoch_dut1_ns) as u64
 }
 
 pub fn format_its_hms(sec: u64) -> String {
-    let h: u64 = sec/3600;
-    let m: u64 = sec%3600 / 60;
-    let s: u64 = sec%60;
+    let h: u64 = sec / 3600;
+    let m: u64 = sec % 3600 / 60;
+    let s: u64 = sec % 60;
     format!("{}:{}:{}", h, m, s)
 }
 
@@ -305,8 +345,18 @@ mod tests {
         ];
         for &(day, ey, em, edr) in &cases {
             let (y, m, dr) = format_its_ymd(day);
-            assert_eq!((y, m, dr), (ey, em, edr),
-                "format_its_ymd({}) got ({},{},{}) want ({},{},{})", day, y, m, dr, ey, em, edr);
+            assert_eq!(
+                (y, m, dr),
+                (ey, em, edr),
+                "format_its_ymd({}) got ({},{},{}) want ({},{},{})",
+                day,
+                y,
+                m,
+                dr,
+                ey,
+                em,
+                edr
+            );
         }
     }
 
@@ -314,8 +364,15 @@ mod tests {
     fn format_its_ymd_roundtrip() {
         for day in -500..=500 {
             let (y, m, dr) = format_its_ymd(day);
-            assert_eq!(day, y * ITS_YEAR_DAYS + m * ITS_MONTH_DAYS + dr,
-                "reconstruct day={} y={} m={} dr={}", day, y, m, dr);
+            assert_eq!(
+                day,
+                y * ITS_YEAR_DAYS + m * ITS_MONTH_DAYS + dr,
+                "reconstruct day={} y={} m={} dr={}",
+                day,
+                y,
+                m,
+                dr
+            );
             assert!(m >= 0 && m <= 6, "months range day={} m={}", day, m);
             assert!(dr >= 0 && dr <= 20, "days_rem range day={} dr={}", day, dr);
         }
@@ -355,8 +412,12 @@ mod tests {
         for doy in 1..365 {
             let (m1, d1) = doy_to_md(2026, doy);
             let (m2, d2) = doy_to_md(2026, doy + 1);
-            assert!((jdn(2026, m2, d2) - jdn(2026, m1, d1) - 1.0).abs() < 1e-9,
-                "doy {} -> {} gap != 1", doy, doy + 1);
+            assert!(
+                (jdn(2026, m2, d2) - jdn(2026, m1, d1) - 1.0).abs() < 1e-9,
+                "doy {} -> {} gap != 1",
+                doy,
+                doy + 1
+            );
         }
     }
 
@@ -366,7 +427,9 @@ mod tests {
         let mut rem = doy;
         for i in 0..12 {
             let dim = mdays[i] + if i == 1 && leap { 1 } else { 0 };
-            if rem <= dim { return (i as i32 + 1, rem); }
+            if rem <= dim {
+                return (i as i32 + 1, rem);
+            }
             rem -= dim;
         }
         (12, 31)
@@ -384,11 +447,19 @@ mod tests {
     #[test]
     fn sun_position_solstice() {
         let (decl, eq) = sun_position(jdn(2026, 6, 22));
-        assert!(decl >= 23.0 && decl <= 24.0, "summer solstice decl={}", decl);
+        assert!(
+            decl >= 23.0 && decl <= 24.0,
+            "summer solstice decl={}",
+            decl
+        );
         assert!(eq.abs() < 1020.0, "summer eq_time={}", eq);
 
         let (decl, eq) = sun_position(jdn(2026, 12, 22));
-        assert!(decl >= -24.0 && decl <= -23.0, "winter solstice decl={}", decl);
+        assert!(
+            decl >= -24.0 && decl <= -23.0,
+            "winter solstice decl={}",
+            decl
+        );
         assert!(eq.abs() < 1020.0, "winter eq_time={}", eq);
 
         let (decl, _) = sun_position(jdn(2000, 3, 20));
@@ -412,7 +483,12 @@ mod tests {
 
         let (sunset, twi, daylen, has_night) = compute_times(2026, 12, 12);
         assert!(has_night, "dec 12 should have night");
-        assert!(sunset >= 0.0 && sunset < twi, "sunset={} twi={}", sunset, twi);
+        assert!(
+            sunset >= 0.0 && sunset < twi,
+            "sunset={} twi={}",
+            sunset,
+            twi
+        );
         assert!(twi <= 86400.0, "twilight={}", twi);
         assert!(daylen > 0.0 && daylen <= 86400.0, "daylen={}", daylen);
     }
@@ -423,11 +499,26 @@ mod tests {
             let (m, d) = doy_to_md(2026, doy);
             let (s, t, dl, hn) = compute_times(2026, m, d);
             let (dc, _) = sun_position(jdn(2026, m, d));
-            assert!(dc >= -23.5 && dc <= 23.5, "decl out of range doy={} decl={}", doy, dc);
+            assert!(
+                dc >= -23.5 && dc <= 23.5,
+                "decl out of range doy={} decl={}",
+                doy,
+                dc
+            );
             if hn {
-                assert!(s >= 0.0 && s < t && t <= 86400.0,
-                    "times out of order doy={} sunset={} twi={}", doy, s, t);
-                assert!(dl > 0.0 && dl <= 86400.0, "daylen out of range doy={} dl={}", doy, dl);
+                assert!(
+                    s >= 0.0 && s < t && t <= 86400.0,
+                    "times out of order doy={} sunset={} twi={}",
+                    doy,
+                    s,
+                    t
+                );
+                assert!(
+                    dl > 0.0 && dl <= 86400.0,
+                    "daylen out of range doy={} dl={}",
+                    doy,
+                    dl
+                );
             } else {
                 assert_eq!(s, -1.0, "no-night sunset must be -1, doy={}", doy);
                 assert_eq!(t, -1.0, "no-night twi must be -1, doy={}", doy);
@@ -438,7 +529,7 @@ mod tests {
 
     #[test]
     fn compute_earliest_night_golden() {
-        let (_, y, m, d) = compute_earliest_night();
+        let (_, y, m, d) = *compute_earliest_night();
         assert_eq!((y, m, d), (2026, 12, 12));
     }
 
@@ -542,10 +633,18 @@ mod tests {
             return;
         };
         let off = cumpute_offset(&mjds, &duts, sd.as_deref());
-        let dut1_epoch = interpol(EPOCH_UNIX / SECSPERDAY as f64 + 40587.0, &mjds, &duts, sd.as_deref());
+        let dut1_epoch = interpol(
+            EPOCH_UNIX / SECSPERDAY as f64 + 40587.0,
+            &mjds,
+            &duts,
+            sd.as_deref(),
+        );
         let epoch_ns = double_to_ns(EPOCH_UNIX);
         let e_ns = epoch_ns + double_to_ns(off) - double_to_ns(dut1_epoch);
-        assert_eq!(its_elapsed_ns(e_ns as u64, off, &mjds, &duts, sd.as_deref()), 0);
+        assert_eq!(
+            its_elapsed_ns(e_ns as u64, off, &mjds, &duts, sd.as_deref()),
+            0
+        );
     }
 
     #[test]
@@ -564,7 +663,13 @@ mod tests {
         let epoch_ns = double_to_ns(EPOCH_UNIX);
         let e_ns = epoch_ns + double_to_ns(off) - double_to_ns(dut1_epoch);
         assert_eq!(
-            its_elapsed_ns((e_ns + 1_000_000_000) as u64, off, &mjds, &duts, sd.as_deref()),
+            its_elapsed_ns(
+                (e_ns + 1_000_000_000) as u64,
+                off,
+                &mjds,
+                &duts,
+                sd.as_deref()
+            ),
             1_000_000_000
         );
     }
@@ -612,7 +717,11 @@ mod tests {
             let e1 = its_elapsed_ns(base as u64, off, &mjds, &duts, sd.as_deref());
             let e2 = its_elapsed_ns((base + its_day_ns) as u64, off, &mjds, &duts, sd.as_deref());
             let diff = (e2 as i64 - e1 as i64).abs();
-            assert_eq!(diff, its_day_ns, "86400s apart must differ by 1 ITS day (k={})", k);
+            assert_eq!(
+                diff, its_day_ns,
+                "86400s apart must differ by 1 ITS day (k={})",
+                k
+            );
         }
     }
 
@@ -646,7 +755,11 @@ mod tests {
             return;
         };
         let (mjds, duts) = load_finals(&data).unwrap();
-        assert!(mjds.len() > 10000, "expected >10k entries, got {}", mjds.len());
+        assert!(
+            mjds.len() > 10000,
+            "expected >10k entries, got {}",
+            mjds.len()
+        );
         for (i, (&m, &d)) in mjds.iter().zip(duts.iter()).enumerate() {
             assert!(m > 40000.0 && m < 70000.0, "mjd[{}]={}", i, m);
             assert!(d > -10.0 && d < 10.0, "dut1[{}]={}", i, d);
