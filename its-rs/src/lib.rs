@@ -4,14 +4,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 // use num_traits::{One, Zero}; 
 // blazing fast until year 2554 
 
-const SECSPERDAY: u64 = 24*60*60;
+pub const SECSPERDAY: u64 = 24*60*60;
 const ITS_YEAR_DAYS: i64 = 147;
 const ITS_MONTH_DAYS: i64 = 21;
 const LON: f64 = 82.93;
 const LAT: f64 = 55.03;
 const ZENITH: f64 = 108.0;
 const PI: f64 = std::f64::consts::PI;
-const EPOCH_UNIX: f64 = 1782086400.0;
+pub const EPOCH_UNIX: f64 = 1782086400.0;
 
 fn dut1_field_blank(line: &str) -> bool { 
     // this checks DUT1 field is blank
