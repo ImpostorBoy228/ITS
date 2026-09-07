@@ -180,7 +180,7 @@ pub fn sun_position(jd: f64) -> (f64, f64) {
 pub fn hour_angle(lat: f64, decl: f64, zenith: f64, sign: i32) -> f64 {
     let cos_ha = (zenith * PI / 180.0).cos() - (lat * PI / 180.0).sin() * (decl * PI / 180.0).sin();
     let cos_ha = cos_ha / ((lat * PI / 180.0).cos() * (decl * PI / 180.0).cos());
-    if cos_ha < -1.0 || cos_ha > 1.0 {
+    if !(-1.0..=1.0).contains(&cos_ha) {
         return -1.0;
     }
     let ha = cos_ha.acos() * 180.0 / PI / 15.0;
