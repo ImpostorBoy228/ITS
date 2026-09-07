@@ -1,6 +1,6 @@
 [package]
 name = "its-rs"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2024"
 description = "Rust implementation of Impo Time System - 147 days in year, consistent day count in month, 0:00 starts in Novosibirsk's earliest night in 50-year span in history"
 license = "MIT"
