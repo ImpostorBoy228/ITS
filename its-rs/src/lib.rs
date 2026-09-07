@@ -49,8 +49,8 @@ pub fn load_finals(finals: &[u8]) -> Result<(Vec<f64>, Vec<f64>), String> {
 
 pub fn build_spline(
     // this builds natural spline and returns it
-    mjd_vec: Vec<f64>,
-    dut1_vec: Vec<f64>) 
+    mjd_vec: &[f64],
+    dut1_vec: &[f64]) 
     -> Option<Vec<f64>> {
     let n = mjd_vec.len();
     if n < 2 || mjd_vec.len() != dut1_vec.len() {
@@ -109,9 +109,9 @@ pub fn build_spline(
 
 pub fn interpol(
     mjd: f64,
-    mjd_vec: Vec<f64>,
-    dut1_vec: Vec<f64>,
-    second_deriv: Option<Vec<f64>>) 
+    mjd_vec: &[f64],
+    dut1_vec: &[f64],
+    second_deriv: Option<&[f64]>) 
     -> f64 {
     let n = mjd_vec.len();
     if n==0 {return 0.0}
@@ -242,21 +242,21 @@ pub fn compute_earliest_night() -> (f64, i32, i32, i32) {
 pub fn cumpute_offset(
     mjd_vec: &[f64],
     dut1_vec: &[f64],
-    second_deriv: Option<Vec<f64>>) 
+    second_deriv: Option<&[f64]>) 
     -> f64 {
     let (twi, y, m, d) = compute_earliest_night();
     if twi < 0.0 { return -1.0; }
     if mjd_vec.is_empty() { return twi; }
     let mjd = jdn(y, m, d) - 2400000.5;
-    twi + interpol(mjd, mjd_vec.to_vec(), dut1_vec.to_vec(), second_deriv)
+    twi + interpol(mjd, mjd_vec, dut1_vec, second_deriv)
 }
 
 pub fn its_elapsed_ns( // update to bigint after 528 years
     timestamp_ns: u64,
     offset: f64,
-    mjd_vec: Vec<f64>,
-    dut1_vec: Vec<f64>,
-    second_deriv: Option<Vec<f64>>) 
+    mjd_vec: &[f64],
+    dut1_vec: &[f64],
+    second_deriv: Option<&[f64]>) 
     ->  u64 {
     let epoch_ns = (EPOCH_UNIX as u64) * 1_000_000_000;
     let offset_ns = (offset * 1_000_000_000.0) as i64;
@@ -482,52 +482,52 @@ mod tests {
 
     #[test]
     fn build_spline_insufficient_knots() {
-        assert!(build_spline(vec![], vec![]).is_none());
-        assert!(build_spline(vec![1.0], vec![1.0]).is_none());
+        assert!(build_spline(&[], &[]).is_none());
+        assert!(build_spline(&[1.0], &[1.0]).is_none());
     }
 
     #[test]
     fn build_spline_and_interpol() {
         let mjds = vec![60000.0, 60001.0, 60002.0, 60003.0];
         let duts = vec![0.10, 0.20, 0.10, 0.00];
-        let sd = build_spline(mjds.clone(), duts.clone()).unwrap();
+        let sd = build_spline(&mjds, &duts).unwrap();
 
         let eps = 1e-6;
-        let v = interpol(60000.0, mjds.clone(), duts.clone(), Some(sd.clone()));
+        let v = interpol(60000.0, &mjds, &duts, Some(&sd));
         assert!((v - 0.10).abs() < eps, "interp(60000)={}", v);
-        let v = interpol(60001.0, mjds.clone(), duts.clone(), Some(sd.clone()));
+        let v = interpol(60001.0, &mjds, &duts, Some(&sd));
         assert!((v - 0.20).abs() < eps, "interp(60001)={}", v);
-        let v = interpol(60002.0, mjds.clone(), duts.clone(), Some(sd.clone()));
+        let v = interpol(60002.0, &mjds, &duts, Some(&sd));
         assert!((v - 0.10).abs() < eps, "interp(60002)={}", v);
-        let v = interpol(60003.0, mjds.clone(), duts.clone(), Some(sd.clone()));
+        let v = interpol(60003.0, &mjds, &duts, Some(&sd));
         assert!((v - 0.00).abs() < eps, "interp(60003)={}", v);
 
-        let v = interpol(60000.5, mjds.clone(), duts.clone(), Some(sd.clone()));
+        let v = interpol(60000.5, &mjds, &duts, Some(&sd));
         assert!(v > 0.10 && v < 0.20, "midpoint 60000.5={}", v);
 
-        let v = interpol(59999.0, mjds.clone(), duts.clone(), Some(sd.clone()));
+        let v = interpol(59999.0, &mjds, &duts, Some(&sd));
         assert!((v - 0.10).abs() < eps, "below first={}", v);
-        let v = interpol(60004.0, mjds.clone(), duts.clone(), Some(sd.clone()));
+        let v = interpol(60004.0, &mjds, &duts, Some(&sd));
         assert!((v - 0.00).abs() < eps, "above last={}", v);
     }
 
     #[test]
     fn interpol_empty() {
-        assert_eq!(interpol(100.0, vec![], vec![], None), 0.0);
+        assert_eq!(interpol(100.0, &[], &[], None), 0.0);
     }
 
     #[test]
     fn interpol_without_spline() {
         let mjds = vec![0.0, 1.0];
         let duts = vec![0.1, 0.2];
-        let v = interpol(0.5, mjds, duts, None);
+        let v = interpol(0.5, &mjds, &duts, None);
         assert!((v - 0.15).abs() < 1e-9, "linear interp={}", v);
     }
 
     fn load_finals_file() -> Option<(Vec<f64>, Vec<f64>, Option<Vec<f64>>)> {
         let data = std::fs::read("finals.all").ok()?;
         let (mjds, duts) = load_finals(&data).ok()?;
-        let sd = build_spline(mjds.clone(), duts.clone());
+        let sd = build_spline(&mjds, &duts);
         Some((mjds, duts, sd))
     }
 
@@ -541,11 +541,11 @@ mod tests {
             eprintln!("skipped: finals.all not found");
             return;
         };
-        let off = cumpute_offset(&mjds, &duts, sd.clone());
-        let dut1_epoch = interpol(EPOCH_UNIX / SECSPERDAY as f64 + 40587.0, mjds.clone(), duts.clone(), sd.clone());
+        let off = cumpute_offset(&mjds, &duts, sd.as_deref());
+        let dut1_epoch = interpol(EPOCH_UNIX / SECSPERDAY as f64 + 40587.0, &mjds, &duts, sd.as_deref());
         let epoch_ns = double_to_ns(EPOCH_UNIX);
         let e_ns = epoch_ns + double_to_ns(off) - double_to_ns(dut1_epoch);
-        assert_eq!(its_elapsed_ns(e_ns as u64, off, mjds, duts, sd), 0);
+        assert_eq!(its_elapsed_ns(e_ns as u64, off, &mjds, &duts, sd.as_deref()), 0);
     }
 
     #[test]
@@ -554,11 +554,19 @@ mod tests {
             eprintln!("skipped: finals.all not found");
             return;
         };
-        let off = cumpute_offset(&mjds, &duts, sd.clone());
-        let dut1_epoch = interpol(EPOCH_UNIX / SECSPERDAY as f64 + 40587.0, mjds.clone(), duts.clone(), sd.clone());
+        let off = cumpute_offset(&mjds, &duts, sd.as_deref());
+        let dut1_epoch = interpol(
+            EPOCH_UNIX / SECSPERDAY as f64 + 40587.0,
+            &mjds,
+            &duts,
+            sd.as_deref(),
+        );
         let epoch_ns = double_to_ns(EPOCH_UNIX);
         let e_ns = epoch_ns + double_to_ns(off) - double_to_ns(dut1_epoch);
-        assert_eq!(its_elapsed_ns((e_ns + 1_000_000_000) as u64, off, mjds, duts, sd), 1_000_000_000);
+        assert_eq!(
+            its_elapsed_ns((e_ns + 1_000_000_000) as u64, off, &mjds, &duts, sd.as_deref()),
+            1_000_000_000
+        );
     }
 
     #[test]
@@ -567,12 +575,20 @@ mod tests {
             eprintln!("skipped: finals.all not found");
             return;
         };
-        let off = cumpute_offset(&mjds, &duts, sd.clone());
-        let dut1_epoch = interpol(EPOCH_UNIX / SECSPERDAY as f64 + 40587.0, mjds.clone(), duts.clone(), sd.clone());
+        let off = cumpute_offset(&mjds, &duts, sd.as_deref());
+        let dut1_epoch = interpol(
+            EPOCH_UNIX / SECSPERDAY as f64 + 40587.0,
+            &mjds,
+            &duts,
+            sd.as_deref(),
+        );
         let epoch_ns = double_to_ns(EPOCH_UNIX);
         let e_ns = epoch_ns + double_to_ns(off) - double_to_ns(dut1_epoch);
         let its_day_ns: i64 = 86400 * 1_000_000_000;
-        assert_eq!(its_elapsed_ns((e_ns + its_day_ns) as u64, off, mjds, duts, sd), its_day_ns as u64);
+        assert_eq!(
+            its_elapsed_ns((e_ns + its_day_ns) as u64, off, &mjds, &duts, sd.as_deref()),
+            its_day_ns as u64
+        );
     }
 
     #[test]
@@ -581,18 +597,22 @@ mod tests {
             eprintln!("skipped: finals.all not found");
             return;
         };
-        let off = cumpute_offset(&mjds, &duts, sd.clone());
-        let dut1_epoch = interpol(EPOCH_UNIX / SECSPERDAY as f64 + 40587.0, mjds.clone(), duts.clone(), sd.clone());
+        let off = cumpute_offset(&mjds, &duts, sd.as_deref());
+        let dut1_epoch = interpol(
+            EPOCH_UNIX / SECSPERDAY as f64 + 40587.0,
+            &mjds,
+            &duts,
+            sd.as_deref(),
+        );
         let epoch_ns = double_to_ns(EPOCH_UNIX);
         let e_ns = epoch_ns + double_to_ns(off) - double_to_ns(dut1_epoch);
         let its_day_ns: i64 = 86400 * 1_000_000_000;
         for k in -50i64..150 {
             let base = e_ns + k * its_day_ns / 10;
-            let e1 = its_elapsed_ns(base as u64, off, mjds.clone(), duts.clone(), sd.clone());
-            let e2 = its_elapsed_ns((base + its_day_ns) as u64, off, mjds.clone(), duts.clone(), sd.clone());
+            let e1 = its_elapsed_ns(base as u64, off, &mjds, &duts, sd.as_deref());
+            let e2 = its_elapsed_ns((base + its_day_ns) as u64, off, &mjds, &duts, sd.as_deref());
             let diff = (e2 as i64 - e1 as i64).abs();
-            assert_eq!(diff, its_day_ns,
-                "86400s apart must differ by 1 ITS day (k={})", k);
+            assert_eq!(diff, its_day_ns, "86400s apart must differ by 1 ITS day (k={})", k);
         }
     }
 
@@ -606,11 +626,16 @@ mod tests {
         let now_days = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs() / SECSPERDAY;
+            .as_secs()
+            / SECSPERDAY;
         let veclen = now_days - 1096;
         assert!(mjds.len() > 0, "loaded 0 entries");
-        assert!(mjds.len() as u64 <= veclen + 1000,
-            "loaded {} entries, veclen estimate was {}", mjds.len(), veclen);
+        assert!(
+            mjds.len() as u64 <= veclen + 1000,
+            "loaded {} entries, veclen estimate was {}",
+            mjds.len(),
+            veclen
+        );
         assert_eq!(mjds.len(), duts.len());
     }
 
@@ -637,7 +662,7 @@ mod tests {
             eprintln!("skipped: finals.all not found");
             return;
         };
-        let off = cumpute_offset(&mjds, &duts, sd);
+        let off = cumpute_offset(&mjds, &duts, sd.as_deref());
         assert!(off >= 44193.5 && off <= 44194.0, "offset={}", off);
     }
 }
