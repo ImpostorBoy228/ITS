@@ -156,7 +156,7 @@ pub fn interpol(mjd: f64, mjd_vec: &[f64], dut1_vec: &[f64], second_deriv: Optio
     linear + correction
 }
 
-fn jdn(y: i32, m: i32, d: i32) -> f64 {
+pub fn jdn(y: i32, m: i32, d: i32) -> f64 {
     let (mut y, mut m) = (y, m);
     if m <= 2 {
         y -= 1;
@@ -270,6 +270,11 @@ fn compute_earliest_night() -> &'static (f64, i32, i32, i32) {
             (-1.0, 0, 0, 0)
         }
     })
+}
+
+pub fn earliest_night_date() -> (i32, i32, i32) {
+    let (_, y, m, d) = *compute_earliest_night();
+    (y, m, d)
 }
 
 pub fn compute_offset(mjd_vec: &[f64], dut1_vec: &[f64], second_deriv: Option<&[f64]>) -> f64 {
