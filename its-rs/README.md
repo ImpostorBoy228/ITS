@@ -1,31 +1,23 @@
 ```rust
 let finals = std::fs::read("finals.all")?;
 
-// finals.all -> (mjd, dut1) & spline
-let (mjd, dut1) = its_rs::load_finals(&finals)?;
-let spline = its_rs::build_spline(&mjd, &dut1);
+// parse finals.all and derive offset / epoch DUT1 once
+let ctx = its_rs::ItsContext::from_finals(&finals)?;
 
-// cumputing offset
-let offset = its_rs::cumpute_offset(&mjd, &dut1, spline.as_deref());
-
-// nsecs scince ITS EPOCH
+// nsecs since ITS EPOCH
 let now_ns = std::time::SystemTime::now()
     .duration_since(std::time::UNIX_EPOCH)?
     .as_nanos() as u64;
-let its_ns = its_rs::its_elapsed_ns(
-    now_ns,
-    offset,
-    &mjd,
-    &dut1,
-    spline.as_deref(),
-);
+let its_ns = ctx.its_elapsed_ns(now_ns);
 
-// breakdown its_ns 
+// breakdown its_ns
 let days = (its_ns / 1_000_000_000) / 86400;
 let (y, m, d) = its_rs::format_its_ymd(days);
 let sec_of_day = (its_ns / 1_000_000_000) % 86400;
 println!("{y}y {m}m {d}d {}", its_rs::format_its_hms(sec_of_day));
 ```
+
+Low-level primitives (`load_finals`, `build_spline`, `compute_offset`, `interpol`) remain available for advanced use.
 
 ### DUT1 and spline
 
@@ -38,11 +30,11 @@ println!("{y}y {m}m {d}d {}", its_rs::format_its_hms(sec_of_day));
 - [`sun_position(jd: f64) -> (f64, f64)`](src/lib.rs) — solar declination (deg) and equation of time (sec) for a Julian date.
 - [`hour_angle(lat: f64, decl: f64, zenith: f64, sign: i32) -> f64`](src/lib.rs) — hour angle in hours; `-1.0` when the altitude condition cannot be met.
 - [`compute_times(y: i32, m: i32, d: i32) -> (f64, f64, f64, bool)`](src/lib.rs) — sunset (sec of day), end of astronomical twilight (−108°), day length, and a `has_night` flag; all time fields are `-1.0` when there is no night.
-- [`cumpute_offset(&mjd, &dut1, Option<&[f64]>) -> f64`](src/lib.rs) — epoch offset in UT1 seconds of day of the earliest nightfall over 1976–2026 (cached via `OnceLock`); `-1.0` when no night was found.
+- [`compute_offset(&mjd, &dut1, Option<&[f64]>) -> f64`](src/lib.rs) — epoch offset in UT1 seconds of day of the earliest nightfall over 1976–2026 (cached via `OnceLock`); `-1.0` when no night was found.
 
 ### Conversion and formatting
 
-- [`its_elapsed_ns(timestamp_ns: u64, offset: f64, &mjd, &dut1, Option<&[f64]>) -> u64`](src/lib.rs) — UNIX nanoseconds → nanoseconds since the ITS epoch (u64 is valid until ~2554).
+- [`ItsContext`](src/lib.rs) — bundles parsed data plus `offset` and `epoch_dut1`; `from_finals` builds it, `its_elapsed_ns(timestamp_ns)` converts a Unix timestamp.
 - [`format_its_ymd(day: i64) -> (i64, i64, i64)`](src/lib.rs) — ITS day number → (year, month 0–6, day of month 0–20); valid for negative days via floor division.
 - [`format_its_hms(sec: u64) -> String`](src/lib.rs) — seconds of day → `"H:MM:SS"`.
 
