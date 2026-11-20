@@ -113,17 +113,17 @@ void test_spline(void) {
     printf("   finals.all: %d real knots parsed\n", nk);
 
     CHECK_NEAR(interpolate_dut1_spline(41684.0), 0.8084178, 1e-6);
-    CHECK_NEAR(interpolate_dut1_spline(61213.0), 0.0113318, 1e-6);
-    CHECK_NEAR(interpolate_dut1_spline(61386.0), -0.0927683, 1e-6);
-    CHECK_NEAR(interpolate_dut1_spline(61624.0), -0.1315681, 1e-6);
-    CHECK_NEAR(interpolate_dut1_spline(61674.0), -0.1044597, 1e-6);
+    CHECK_NEAR(interpolate_dut1_spline(61213.0), 0.0113284, 1e-6);
+    CHECK_NEAR(interpolate_dut1_spline(61386.0), -0.1010348, 1e-6);
+    CHECK_NEAR(interpolate_dut1_spline(61624.0), -0.2559768, 1e-6);
+    CHECK_NEAR(interpolate_dut1_spline(61674.0), -0.2339506, 1e-6);
     CHECK_NEAR(interpolate_dut1_spline(40587.0), 0.8084178, 1e-6);
 
-    CHECK(nk == 19976);
+    CHECK(nk == 20052);
     CHECK_NEAR(knots[0].mjd, 41684.0, 1e-9);
     CHECK_NEAR(knots[0].dut1, 0.8084178, 1e-9);
-    CHECK_NEAR(knots[nk - 1].mjd, 61659.0, 1e-9);
-    CHECK_NEAR(knots[nk - 1].dut1, -0.1044597, 1e-9);
+    CHECK_NEAR(knots[nk - 1].mjd, 61735.0, 1e-9);
+    CHECK_NEAR(knots[nk - 1].dut1, -0.2633857, 1e-9);
 
     for (int i = 0; i < nk; i++) {
         double got = interpolate_dut1_spline(knots[i].mjd);

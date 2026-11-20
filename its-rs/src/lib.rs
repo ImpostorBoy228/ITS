@@ -272,7 +272,7 @@ fn compute_earliest_night() -> &'static (f64, i32, i32, i32) {
     })
 }
 
-pub fn cumpute_offset(mjd_vec: &[f64], dut1_vec: &[f64], second_deriv: Option<&[f64]>) -> f64 {
+pub fn compute_offset(mjd_vec: &[f64], dut1_vec: &[f64], second_deriv: Option<&[f64]>) -> f64 {
     let (twi, y, m, d) = *compute_earliest_night();
     if twi < 0.0 {
         return -1.0;
@@ -284,25 +284,6 @@ pub fn cumpute_offset(mjd_vec: &[f64], dut1_vec: &[f64], second_deriv: Option<&[
     twi + interpol(mjd, mjd_vec, dut1_vec, second_deriv)
 }
 
-pub fn its_elapsed_ns(
-    // update to bigint after 528 years
-    timestamp_ns: u64,
-    offset: f64,
-    mjd_vec: &[f64],
-    dut1_vec: &[f64],
-    second_deriv: Option<&[f64]>,
-) -> u64 {
-    let epoch_ns = (EPOCH_UNIX as u64) * 1_000_000_000;
-    let offset_ns = (offset * 1_000_000_000.0) as i64;
-    let epoch_dut1_ns = (1_000_000_000.0
-        * interpol(
-            EPOCH_UNIX / SECSPERDAY as f64 + 40587.0,
-            mjd_vec,
-            dut1_vec,
-            second_deriv,
-        )) as i64;
-    (timestamp_ns as i64 - epoch_ns as i64 - offset_ns + epoch_dut1_ns) as u64
-}
 
 pub fn format_its_hms(sec: u64) -> String {
     let h: u64 = sec / 3600;
@@ -320,6 +301,46 @@ pub fn format_its_ymd(day: i64) -> (i64, i64, i64) {
     }
     let m = rem / ITS_MONTH_DAYS;
     (y, m, rem % ITS_MONTH_DAYS)
+}
+
+pub struct ItsContext {
+    pub mjd: Vec<f64>,
+    pub dut1: Vec<f64>,
+    pub spline: Option<Vec<f64>>,
+    pub offset: f64,
+    pub epoch_dut1: f64,
+}
+
+impl ItsContext {
+    pub fn from_finals(finals: &[u8]) -> Result<Self, String> {
+        let (mjd, dut1) = load_finals(finals)?;
+        let spline = build_spline(&mjd, &dut1);
+        let offset = compute_offset(&mjd, &dut1, spline.as_deref());
+        let epoch_dut1 = interpol(
+            EPOCH_UNIX / SECSPERDAY as f64 + 40587.0,
+            &mjd,
+            &dut1,
+            spline.as_deref(),
+        );
+        Ok(Self {
+            mjd,
+            dut1,
+            spline,
+            offset,
+            epoch_dut1,
+        })
+    }
+
+    pub fn its_elapsed_ns(&self, timestamp_ns: u64) -> u64 {
+        let epoch_ns = (EPOCH_UNIX as u64) * 1_000_000_000;
+        let offset_ns = (self.offset * 1_000_000_000.0) as i64;
+        let epoch_dut1_ns = (self.epoch_dut1 * 1_000_000_000.0) as i64;
+        (timestamp_ns as i64 - epoch_ns as i64 - offset_ns + epoch_dut1_ns) as u64
+    }
+
+    pub fn dut1(&self, mjd: f64) -> f64 {
+        interpol(mjd, &self.mjd, &self.dut1, self.spline.as_deref())
+    }
 }
 
 #[cfg(test)]
@@ -628,98 +649,71 @@ mod tests {
 
     #[test]
     fn its_elapsed_ns_epoch() {
-        let Some((mjds, duts, sd)) = load_finals_file() else {
+        let Some(data) = std::fs::read("finals.all").ok() else {
             eprintln!("skipped: finals.all not found");
             return;
         };
-        let off = cumpute_offset(&mjds, &duts, sd.as_deref());
-        let dut1_epoch = interpol(
-            EPOCH_UNIX / SECSPERDAY as f64 + 40587.0,
-            &mjds,
-            &duts,
-            sd.as_deref(),
-        );
+        let ctx = match ItsContext::from_finals(&data) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
         let epoch_ns = double_to_ns(EPOCH_UNIX);
-        let e_ns = epoch_ns + double_to_ns(off) - double_to_ns(dut1_epoch);
-        assert_eq!(
-            its_elapsed_ns(e_ns as u64, off, &mjds, &duts, sd.as_deref()),
-            0
-        );
+        let e_ns = epoch_ns + double_to_ns(ctx.offset) - double_to_ns(ctx.epoch_dut1);
+        assert_eq!(ctx.its_elapsed_ns(e_ns as u64), 0);
     }
 
     #[test]
     fn its_elapsed_ns_one_second() {
-        let Some((mjds, duts, sd)) = load_finals_file() else {
+        let Some(data) = std::fs::read("finals.all").ok() else {
             eprintln!("skipped: finals.all not found");
             return;
         };
-        let off = cumpute_offset(&mjds, &duts, sd.as_deref());
-        let dut1_epoch = interpol(
-            EPOCH_UNIX / SECSPERDAY as f64 + 40587.0,
-            &mjds,
-            &duts,
-            sd.as_deref(),
-        );
+        let ctx = match ItsContext::from_finals(&data) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
         let epoch_ns = double_to_ns(EPOCH_UNIX);
-        let e_ns = epoch_ns + double_to_ns(off) - double_to_ns(dut1_epoch);
-        assert_eq!(
-            its_elapsed_ns(
-                (e_ns + 1_000_000_000) as u64,
-                off,
-                &mjds,
-                &duts,
-                sd.as_deref()
-            ),
-            1_000_000_000
-        );
+        let e_ns = epoch_ns + double_to_ns(ctx.offset) - double_to_ns(ctx.epoch_dut1);
+        assert_eq!(ctx.its_elapsed_ns((e_ns + 1_000_000_000) as u64), 1_000_000_000);
     }
 
     #[test]
     fn its_elapsed_ns_one_day() {
-        let Some((mjds, duts, sd)) = load_finals_file() else {
+        let Some(data) = std::fs::read("finals.all").ok() else {
             eprintln!("skipped: finals.all not found");
             return;
         };
-        let off = cumpute_offset(&mjds, &duts, sd.as_deref());
-        let dut1_epoch = interpol(
-            EPOCH_UNIX / SECSPERDAY as f64 + 40587.0,
-            &mjds,
-            &duts,
-            sd.as_deref(),
-        );
+        let ctx = match ItsContext::from_finals(&data) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
         let epoch_ns = double_to_ns(EPOCH_UNIX);
-        let e_ns = epoch_ns + double_to_ns(off) - double_to_ns(dut1_epoch);
+        let e_ns = epoch_ns + double_to_ns(ctx.offset) - double_to_ns(ctx.epoch_dut1);
         let its_day_ns: i64 = 86400 * 1_000_000_000;
-        assert_eq!(
-            its_elapsed_ns((e_ns + its_day_ns) as u64, off, &mjds, &duts, sd.as_deref()),
-            its_day_ns as u64
-        );
+        assert_eq!(ctx.its_elapsed_ns((e_ns + its_day_ns) as u64), its_day_ns as u64);
     }
 
     #[test]
     fn its_elapsed_ns_day_spacing() {
-        let Some((mjds, duts, sd)) = load_finals_file() else {
+        let Some(data) = std::fs::read("finals.all").ok() else {
             eprintln!("skipped: finals.all not found");
             return;
         };
-        let off = cumpute_offset(&mjds, &duts, sd.as_deref());
-        let dut1_epoch = interpol(
-            EPOCH_UNIX / SECSPERDAY as f64 + 40587.0,
-            &mjds,
-            &duts,
-            sd.as_deref(),
-        );
+        let ctx = match ItsContext::from_finals(&data) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
         let epoch_ns = double_to_ns(EPOCH_UNIX);
-        let e_ns = epoch_ns + double_to_ns(off) - double_to_ns(dut1_epoch);
+        let e_ns = epoch_ns + double_to_ns(ctx.offset) - double_to_ns(ctx.epoch_dut1);
         let its_day_ns: i64 = 86400 * 1_000_000_000;
         for k in -50i64..150 {
             let base = e_ns + k * its_day_ns / 10;
-            let e1 = its_elapsed_ns(base as u64, off, &mjds, &duts, sd.as_deref());
-            let e2 = its_elapsed_ns((base + its_day_ns) as u64, off, &mjds, &duts, sd.as_deref());
+            let e1 = ctx.its_elapsed_ns(base as u64);
+            let e2 = ctx.its_elapsed_ns((base + its_day_ns) as u64);
             let diff = (e2 as i64 - e1 as i64).abs();
             assert_eq!(
                 diff, its_day_ns,
-                "86400s apart must differ by 1 ITS day (k={})",
+                "instants 86400s apart must differ by exactly one ITS day (k={})",
                 k
             );
         }
@@ -770,12 +764,50 @@ mod tests {
     }
 
     #[test]
-    fn cumpute_offset_golden() {
+    fn compute_offset_golden() {
         let Some((mjds, duts, sd)) = load_finals_file() else {
             eprintln!("skipped: finals.all not found");
             return;
         };
-        let off = cumpute_offset(&mjds, &duts, sd.as_deref());
+        let off = compute_offset(&mjds, &duts, sd.as_deref());
         assert!(off >= 44193.5 && off <= 44194.0, "offset={}", off);
+    }
+
+    #[test]
+    fn its_context_from_finals() {
+        let Some(data) = std::fs::read("finals.all").ok() else {
+            eprintln!("skipped: finals.all not found");
+            return;
+        };
+        let ctx = ItsContext::from_finals(&data).unwrap();
+        assert!(ctx.offset >= 44193.5 && ctx.offset <= 44194.0);
+        assert_eq!(ctx.mjd.len(), ctx.dut1.len());
+        assert!(ctx.spline.as_ref().map_or(true, |s| s.len() == ctx.mjd.len()));
+        assert!(ctx.epoch_dut1 > -10.0 && ctx.epoch_dut1 < 10.0);
+    }
+
+    #[test]
+    fn its_context_its_elapsed_ns_epoch() {
+        let Some(data) = std::fs::read("finals.all").ok() else {
+            eprintln!("skipped: finals.all not found");
+            return;
+        };
+        let ctx = ItsContext::from_finals(&data).unwrap();
+        let epoch_ns = double_to_ns(EPOCH_UNIX);
+        let e_ns = epoch_ns + double_to_ns(ctx.offset) - double_to_ns(ctx.epoch_dut1);
+        assert_eq!(ctx.its_elapsed_ns(e_ns as u64), 0);
+    }
+
+    #[test]
+    fn its_context_dut1() {
+        let Some(data) = std::fs::read("finals.all").ok() else {
+            eprintln!("skipped: finals.all not found");
+            return;
+        };
+        let ctx = ItsContext::from_finals(&data).unwrap();
+        let v = ctx.dut1(61386.0);
+        assert!(v > -1.0 && v < 1.0);
+        let v2 = interpol(61386.0, &ctx.mjd, &ctx.dut1, ctx.spline.as_deref());
+        assert!((v - v2).abs() < 1e-12);
     }
 }

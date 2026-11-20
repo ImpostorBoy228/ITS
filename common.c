@@ -103,6 +103,7 @@ void load_finals(const char *filename) {
         fprintf(stderr, "SEX ALERT: fucked up to open %s, continuing without DUT1\n", filename);
         return;
     }
+    n_eop = 0;
     char line[256];
     // first pass: count valid lines
     while (fgets(line, sizeof(line), f)) {
@@ -182,8 +183,14 @@ double interpolate_dut1_spline(double mjd) {
     if (n_eop == 0) return 0.0;
     if (mjd <= mjd_arr[0]) return dut1_arr[0];
     if (mjd >= mjd_arr[n_eop-1]) return dut1_arr[n_eop-1];
-    int i = 0;
-    while (i < n_eop-1 && mjd_arr[i+1] < mjd) i++;
+    // binary search (partition_point style) for the interval containing mjd
+    int lo = 0, hi = n_eop - 1;
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (mjd_arr[mid + 1] < mjd) lo = mid + 1;
+        else hi = mid;
+    }
+    int i = lo;
     double h = mjd_arr[i+1] - mjd_arr[i];
     double t = (mjd - mjd_arr[i]) / h;
     double y0 = dut1_arr[i], y1 = dut1_arr[i+1];
@@ -326,4 +333,5 @@ void free_eop(void) {
     mjd_arr = NULL;
     dut1_arr = NULL;
     second_deriv = NULL;
+    n_eop = 0;
 }
